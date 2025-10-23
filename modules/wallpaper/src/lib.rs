@@ -1,5 +1,8 @@
+use chrono::Timelike;
+use rand::seq::SliceRandom;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
+    fs,
     path::{Path, PathBuf},
 };
 
@@ -10,7 +13,7 @@ use orbit_api::{
         model::Size,
         render::texture::TextureHandle,
         sctk::{Anchor, KeyboardInteractivity, Layer, LayerOptions, Options, OutputSet},
-        widget::{Container, Element, Image, Length, Text, Widget},
+        widget::{Container, Element, Image, Length, Text, Widget as _},
     },
 };
 use serde::{Deserialize, Serialize};
@@ -22,46 +25,103 @@ pub enum Msg {
     None,
 }
 
-fn default_source() -> PathBuf {
-    let cfg_path = helpers::xdg_home().canonicalize().unwrap();
-    cfg_path.join("Pictures/Wallpapers")
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct Config {
-    #[serde(default = "default_source")]
-    pub source: PathBuf,
+pub struct WidgetConfig {
+    #[serde(rename = "type")]
+    r#type: String,
 }
 
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Config {
+    pub source: PathBuf,
+    pub widgets: Vec<WidgetConfig>,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        let home = helpers::xdg_home().canonicalize().unwrap();
+
+        Self {
+            source: home.join("Pictures/Wallpapers"),
+            widgets: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct PerTarget {
+    file: PathBuf,
+    tex: TextureHandle,
+    time: chrono::DateTime<chrono::Local>,
+}
+
+#[derive(Default, Debug)]
 pub struct Wallpaper {
-    textures: HashMap<TargetId, TextureHandle>,
+    targets: HashMap<TargetId, PerTarget>,
     cfg: Config,
 }
 
 impl Wallpaper {
-    fn pick_image(path: &Path) -> Option<PathBuf> {
+    fn is_supported_ext(p: &Path) -> bool {
+        p.extension()
+            .and_then(|x| x.to_str())
+            .map(|x| matches!(&x.to_ascii_lowercase()[..], "jpg" | "jpeg" | "png"))
+            .unwrap_or(false)
+    }
+
+    fn collect_images_rec(path: &Path, out: &mut Vec<PathBuf>) {
         if path.is_file() {
-            return Some(path.to_path_buf());
+            if Self::is_supported_ext(path) {
+                out.push(path.to_path_buf());
+            }
+            return;
         }
-        let Ok(rd) = std::fs::read_dir(path) else {
-            return None;
+
+        let Ok(rd) = fs::read_dir(path) else {
+            return;
         };
         for e in rd.flatten() {
             let p = e.path();
-            if !p.is_file() {
-                continue;
-            }
-            if let Some(ext) = p
-                .extension()
-                .and_then(|x| x.to_str())
-                .map(|x| x.to_ascii_lowercase())
-                && (ext == "jpg" || ext == "jpeg" || ext == "png")
-            {
-                return Some(p);
+            if p.is_dir() {
+                Self::collect_images_rec(&p, out);
+            } else if p.is_file() && Self::is_supported_ext(&p) {
+                out.push(p);
             }
         }
-        None
+    }
+
+    fn pick_random_image_unique(&self, root: &Path) -> Option<PathBuf> {
+        let mut all = Vec::new();
+        Self::collect_images_rec(root, &mut all);
+
+        if all.is_empty() {
+            return None;
+        }
+
+        let used: HashSet<&Path> = self.targets.values().map(|t| t.file.as_path()).collect();
+
+        let mut unused: Vec<PathBuf> = all
+            .into_iter()
+            .filter(|p| !used.contains(p.as_path()))
+            .collect();
+
+        let mut rng = rand::rng();
+
+        if !unused.is_empty() {
+            unused.shuffle(&mut rng);
+            return unused.pop();
+        }
+
+        let mut any: Vec<PathBuf> = self.targets.values().map(|t| t.file.clone()).collect();
+        if any.is_empty() {
+            let mut fallback = Vec::new();
+            Self::collect_images_rec(root, &mut fallback);
+            fallback.shuffle(&mut rng);
+            fallback.pop()
+        } else {
+            any.shuffle(&mut rng);
+            any.pop()
+        }
     }
 
     fn ensure_texture_loaded<'a>(
@@ -69,17 +129,28 @@ impl Wallpaper {
         tid: &TargetId,
         engine: &mut Engine<'a, ErasedMsg>,
     ) -> bool {
-        if self.textures.contains_key(tid) || !self.cfg.source.exists() {
+        if self.targets.contains_key(tid) || !self.cfg.source.exists() {
             return false;
         }
-        if let Some(p) = Self::pick_image(Path::new(&self.cfg.source))
-            && let Ok(reader) = image::ImageReader::open(&p)
+
+        let Some(p) = self.pick_random_image_unique(Path::new(&self.cfg.source)) else {
+            return false;
+        };
+
+        if let Ok(reader) = image::ImageReader::open(&p)
             && let Ok(img) = reader.decode()
         {
             let rgba = img.to_rgba8();
             let (w, h) = rgba.dimensions();
             let handle = engine.load_texture_rgba8(w, h, rgba.as_raw());
-            self.textures.insert(*tid, handle);
+            self.targets.insert(
+                *tid,
+                PerTarget {
+                    tex: handle,
+                    file: p,
+                    time: chrono::Local::now(),
+                },
+            );
             return true;
         }
         false
@@ -91,8 +162,8 @@ impl OrbitModule for Wallpaper {
     type Message = Msg;
 
     fn cleanup<'a>(&mut self, engine: &mut Engine<'a, ErasedMsg>) {
-        for (_, handle) in self.textures.drain() {
-            engine.unload_texture(handle);
+        for (_, target) in self.targets.drain() {
+            engine.unload_texture(target.tex);
         }
     }
 
@@ -112,22 +183,35 @@ impl OrbitModule for Wallpaper {
         _event: &Event<Self::Message>,
         _orbit: &OrbitLoop,
     ) -> bool {
-        self.ensure_texture_loaded(&tid, engine)
+        let mut needs_redraw = self.ensure_texture_loaded(&tid, engine);
+
+        if let Some(target) = self.targets.get_mut(&tid) {
+            let now = chrono::Local::now();
+            if now.second() != target.time.second() {
+                target.time = now;
+                needs_redraw = true;
+            }
+        }
+
+        needs_redraw
     }
 
     fn view(&self, tid: &TargetId) -> Element<Self::Message> {
-        use Length::Grow;
+        use Length::{Fit, Grow};
 
-        let Some(tex) = self.textures.get(tid) else {
+        let Some(target) = self.targets.get(tid) else {
             return Container::new(vec![Text::new("No image", 32.0).einto()])
                 .size(Size::new(Grow, Grow))
                 .einto();
         };
 
-        let img = Image::new(Size::new(Grow, Grow), *tex).einto();
+        let img = Image::new(Size::splat(Grow), target.tex).einto();
+        let clock = Text::new(target.time.format("%H:%M:%S").to_string(), 32.0)
+            .size(Size::splat(Fit))
+            .einto();
 
-        Container::new(vec![img])
-            .size(Size::new(Grow, Grow))
+        Container::new(vec![img, clock])
+            .size(Size::splat(Grow))
             .einto()
     }
 }

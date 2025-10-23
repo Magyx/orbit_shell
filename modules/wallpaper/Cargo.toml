@@ -14,3 +14,5 @@ image = { version = "0.25.8", default-features = false, features = [
   "png",
   "jpeg",
 ] }
+chrono = "0.4.42"
+rand = "0.10.0-rc.0"
