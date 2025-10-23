@@ -1,0 +1,23 @@
+[package]
+name = "orbitd"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+orbit-dbus = { path = "../../src/orbit-dbus/" }
+orbit-api = { path = "../orbit-api/" }
+
+notify = "8.2.0"
+serde = "1.0.228"
+serde_yml = "0.0.12"
+libloading = "0.8.9"
+
+zbus = "5.12.0"
+futures-lite = "2.6.1"
+
+ui = { git = "https://github.com/Magyx/ui_lib.git", features = ["vulkan"] }
+wgpu = "25.0.2"
+
+smithay-client-toolkit = "0.20.0"
+wayland-client = "0.31.11"
+calloop = "0.14.3"

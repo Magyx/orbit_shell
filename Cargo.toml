@@ -1,0 +1,9 @@
+[workspace]
+resolver = "3"
+members = [
+  "src/orbit-api",
+  "src/orbit",
+  "src/orbitd",
+  "src/orbit-dbus",
+  "xtask", "modules/wallpaper",
+]

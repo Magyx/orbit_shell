@@ -1,0 +1,4 @@
+[alias]
+xrun = "run -p xtask -- orbit"
+xrund = "run -p xtask -- orbitd"
+xtask = "run -p xtask --"
