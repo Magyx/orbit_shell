@@ -1,13 +1,13 @@
-use chrono::Timelike;
 use rand::seq::SliceRandom;
 use std::{
     collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
+    time::Duration,
 };
 
 use orbit_api::{
-    ErasedMsg, Event, OrbitLoop, OrbitModule, orbit_plugin,
+    ErasedMsg, Event, OrbitLoop, OrbitModule, Subscription, orbit_plugin,
     ui::{
         graphics::{Engine, TargetId},
         model::Size,
@@ -23,6 +23,7 @@ mod helpers;
 #[derive(Clone, Debug)]
 pub enum Msg {
     None,
+    Tick,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -180,17 +181,15 @@ impl OrbitModule for Wallpaper {
         &mut self,
         tid: TargetId,
         engine: &mut Engine<'a, ErasedMsg>,
-        _event: &Event<Self::Message>,
+        event: &Event<Self::Message>,
         _orbit: &OrbitLoop,
     ) -> bool {
         let mut needs_redraw = self.ensure_texture_loaded(&tid, engine);
-
-        if let Some(target) = self.targets.get_mut(&tid) {
-            let now = chrono::Local::now();
-            if now.second() != target.time.second() {
-                target.time = now;
-                needs_redraw = true;
-            }
+        if let Event::Message(Msg::Tick) = event
+            && let Some(target) = self.targets.get_mut(&tid)
+        {
+            target.time = chrono::Local::now();
+            needs_redraw = true;
         }
 
         needs_redraw
@@ -213,6 +212,13 @@ impl OrbitModule for Wallpaper {
         Container::new(vec![img, clock])
             .size(Size::splat(Grow))
             .einto()
+    }
+
+    fn subscriptions(&self) -> Subscription<Self::Message> {
+        Subscription::Interval {
+            every: Duration::from_secs(1),
+            message: Msg::Tick,
+        }
     }
 }
 

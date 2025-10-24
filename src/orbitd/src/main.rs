@@ -7,7 +7,10 @@ use std::{
     sync::{Arc, mpsc},
 };
 
-use calloop::{EventLoop, channel as loop_channel};
+use calloop::{
+    EventLoop, LoopHandle, RegistrationToken, channel as loop_channel,
+    timer::{TimeoutAction, Timer},
+};
 use serde_yml::{Mapping, Value};
 use smithay_client_toolkit::reexports::calloop_wayland_source::WaylandSource;
 use ui::{
@@ -72,6 +75,7 @@ struct Orbit<'a> {
     config_path: PathBuf,
     config: serde_yml::Value,
     modules: HashMap<ModuleId, ModuleInfo>,
+    subs: HashMap<ModuleId, Vec<RegistrationToken>>,
 
     engine: Engine<'a, ErasedMsg>,
     by_module: HashMap<ModuleId, Vec<TargetId>>,
@@ -105,6 +109,7 @@ impl<'a> Orbit<'a> {
             config_path,
             config,
             modules,
+            subs: HashMap::new(),
 
             engine,
             by_module: HashMap::with_capacity(modules_len),
@@ -185,33 +190,96 @@ impl<'a> Orbit<'a> {
         Ok(modules)
     }
 
-    fn realize_loaded_modules(&mut self) {
-        for (&mid, module) in self.modules.iter_mut() {
-            if module.toggled {
-                let opts = module.as_ref().manifest().options.clone();
-                let items = self.sctk.create_surfaces(opts);
-
-                for CreatedSurface { sid, handles, size } in items {
-                    let tid = self.engine.attach_target(Arc::new(handles), size);
-                    self.by_module.entry(mid).or_default().push(tid);
-                    self.by_surface.insert(sid, (tid, mid));
+    fn add_subscriptions(
+        &mut self,
+        loop_handle: &mut LoopHandle<SctkState>,
+        mid: &ModuleId,
+        module: &ModuleInfo,
+    ) {
+        fn flatten_subs(
+            s: orbit_api::Subscription<ErasedMsg>,
+            out: &mut Vec<orbit_api::Subscription<ErasedMsg>>,
+        ) {
+            use orbit_api::Subscription::*;
+            match s {
+                None => {}
+                Batch(v) => {
+                    for child in v {
+                        flatten_subs(child, out);
+                    }
                 }
-
-                let module_name = module.as_ref().manifest().name;
-                module.as_mut().config_updated(
-                    &mut self.engine,
-                    self.config.get(module_name).expect("name needs to exist"),
-                );
+                other => out.push(other),
             }
+        }
+        let mut subs = Vec::new();
+        flatten_subs(module.as_ref().subscriptions(), &mut subs);
 
-            for (key, factory) in module.as_ref().pipelines() {
-                self.engine
-                    .register_pipeline(PipelineKey::Other(key), factory);
+        let sctk_tx = self.sctk.tx.clone();
+        let mut tokens = Vec::new();
+        for sub in subs {
+            match sub {
+                orbit_api::Subscription::Interval { every, message } => {
+                    let timer = Timer::from_duration(every);
+                    let base = message;
+                    let token = loop_handle
+                        .insert_source(timer, {
+                            let sctk_tx = sctk_tx.clone();
+                            move |_deadline: std::time::Instant, _, _| {
+                                let _ = sctk_tx
+                                    .send(ui::sctk::SctkEvent::message(base.clone_for_send()));
+                                TimeoutAction::ToDuration(every)
+                            }
+                        })
+                        .expect("insert Timer");
+                    tokens.push(token);
+                }
+                orbit_api::Subscription::Timeout { after, message } => {
+                    let timer = Timer::from_duration(after);
+                    let base = message;
+                    let token = loop_handle
+                        .insert_source(timer, {
+                            let sctk_tx = sctk_tx.clone();
+                            move |_deadline: std::time::Instant, _, _| {
+                                let _ = sctk_tx
+                                    .send(ui::sctk::SctkEvent::message(base.clone_for_send()));
+                                TimeoutAction::Drop
+                            }
+                        })
+                        .expect("insert Timer");
+                    tokens.push(token);
+                }
+                orbit_api::Subscription::None | orbit_api::Subscription::Batch(_) => {}
+            }
+        }
+        if !tokens.is_empty() {
+            self.subs.insert(*mid, tokens);
+        }
+    }
+
+    fn remove_subscriptions(&mut self, loop_handle: &mut LoopHandle<SctkState>, mid: ModuleId) {
+        if let Some(tokens) = self.subs.remove(&mid) {
+            for token in tokens {
+                loop_handle.remove(token);
             }
         }
     }
 
-    fn realize_module(&mut self, mid: ModuleId, module: &mut ModuleInfo) {
+    fn realize_modules(
+        &mut self,
+        loop_handle: &mut LoopHandle<SctkState>,
+        modules: &mut HashMap<ModuleId, ModuleInfo>,
+    ) {
+        for (mid, module) in modules.iter_mut() {
+            self.realize_module(loop_handle, *mid, module);
+        }
+    }
+
+    fn realize_module(
+        &mut self,
+        loop_handle: &mut LoopHandle<SctkState>,
+        mid: ModuleId,
+        module: &mut ModuleInfo,
+    ) {
         if module.toggled {
             let opts = module.as_ref().manifest().options.clone();
             let items = self.sctk.create_surfaces(opts);
@@ -227,6 +295,8 @@ impl<'a> Orbit<'a> {
                 &mut self.engine,
                 self.config.get(module_name).expect("name needs to exist"),
             );
+
+            self.add_subscriptions(loop_handle, &mid, module);
         }
 
         for (key, factory) in module.as_ref().pipelines() {
@@ -235,7 +305,7 @@ impl<'a> Orbit<'a> {
         }
     }
 
-    fn unrealize_module(&mut self, mid: ModuleId) {
+    fn unrealize_module(&mut self, loop_handle: &mut LoopHandle<SctkState>, mid: ModuleId) {
         let sids: Vec<SurfaceId> = self
             .by_surface
             .iter()
@@ -247,6 +317,8 @@ impl<'a> Orbit<'a> {
             self.engine.detach_target(&tid);
         }
         self.by_surface.retain(|_, (_, owner)| *owner != mid);
+
+        self.remove_subscriptions(loop_handle, mid);
 
         self.sctk.destroy_surfaces(&sids);
     }
@@ -272,11 +344,9 @@ impl<'a> Orbit<'a> {
         }
     }
 
-    fn run(mut self) {
+    fn run(&mut self) {
         self.d_server.start();
         self.config_watcher.start(&self.config_path);
-
-        self.realize_loaded_modules();
 
         let (tx, rx) = mpsc::channel::<Event>();
         let orbit_loop = OrbitLoop::new();
@@ -309,17 +379,23 @@ impl<'a> Orbit<'a> {
             },
         );
 
+        {
+            let mut modules = std::mem::take(&mut self.modules);
+            self.realize_modules(&mut event_loop.handle(), &mut modules);
+            self.modules = modules;
+        }
+
         while !orbit_loop.should_close() {
             _ = event_loop.dispatch(None, &mut self.sctk.state);
 
             while let Ok(e) = rx.try_recv() {
                 match e {
                     Event::Sctk(sctk_event) => {
-                        let mut handle = |tid: &TargetId, mid: &ModuleId| {
+                        let mut handle_for = |tid: &TargetId, mid: &ModuleId, event: &SctkEvent| {
                             if let Some(module) = self.modules.get_mut(mid) {
                                 self.engine.handle_platform_event(
                                     tid,
-                                    &sctk_event,
+                                    event,
                                     &mut |eng, e, s: &mut ModuleInfo, ctl| {
                                         s.as_mut().update(*tid, eng, e, ctl)
                                     },
@@ -331,15 +407,26 @@ impl<'a> Orbit<'a> {
                         match sctk_event.surface_id() {
                             Some(sid) => {
                                 if let Some((tid, mid)) = self.by_surface.get(&sid) {
-                                    handle(tid, mid);
+                                    handle_for(tid, mid, &sctk_event);
                                 }
                             }
-                            None => {
+                            None if !matches!(sctk_event, SctkEvent::Message(_)) => {
                                 for (_, (tid, mid)) in self.by_surface.iter() {
-                                    handle(tid, mid);
+                                    handle_for(tid, mid, &sctk_event);
+                                }
+                            }
+                            _ => {
+                                if let Some(base) = sctk::take_erased_from_message(&sctk_event) {
+                                    for (_, (tid, mid)) in self.by_surface.iter() {
+                                        let event =
+                                            ui::sctk::SctkEvent::message(base.clone_for_send());
+                                        handle_for(tid, mid, &event);
+                                    }
                                 }
                             }
                         }
+
+                        self.tick_all_targets(&orbit_loop);
                     }
                     Event::Dbus(dbus_event) => match dbus_event {
                         DbusEvent::Reload(resp_tx) => {
@@ -365,7 +452,14 @@ impl<'a> Orbit<'a> {
                             ) {
                                 Ok(mods) => {
                                     self.modules = mods;
-                                    self.realize_loaded_modules();
+                                    {
+                                        let mut modules = std::mem::take(&mut self.modules);
+                                        self.realize_modules(
+                                            &mut event_loop.handle(),
+                                            &mut modules,
+                                        );
+                                        self.modules = modules;
+                                    }
                                     "Reloaded".into()
                                 }
                                 Err(e) => e,
@@ -396,40 +490,55 @@ impl<'a> Orbit<'a> {
                             let mut module = self.modules.remove(&mid).expect("just found");
 
                             if module.toggled {
-                                self.unrealize_module(mid);
+                                self.unrealize_module(&mut event_loop.handle(), mid);
                                 module.toggled = false;
                             } else {
-                                self.realize_module(mid, &mut module);
+                                self.realize_module(&mut event_loop.handle(), mid, &mut module);
                                 module.toggled = true;
                             }
 
                             self.modules.insert(mid, module);
                         }
                         DbusEvent::Exit => {
-                            todo!()
+                            orbit_loop.close();
+                            event_loop.get_signal().stop();
                         }
                     },
                     Event::Config(config_event) => {
                         match config_event {
-                            ConfigEvent::Reload(value) => {
+                            ConfigEvent::Reload(mut value) => {
                                 if self.config == value {
                                     continue;
                                 }
 
-                                self.config = value;
+                                // TODO: only push new config to ones with changes
                                 let modules_map =
-                                    self.config.as_mapping_mut().expect("mapping just created");
+                                    value.as_mapping_mut().expect("mapping just created");
 
                                 let mut errors = Vec::new();
-                                for module in self.modules.values_mut() {
-                                    let name = module.as_ref().manifest().name;
-                                    let value = &modules_map[name];
-                                    if let Err(e) = module.as_ref().validate_config(value) {
-                                        errors.push((name.to_string(), e));
-                                    } else {
-                                        module.as_mut().config_updated(&mut self.engine, value);
+                                {
+                                    let mut modules = std::mem::take(&mut self.modules);
+                                    for (mid, module) in modules.iter_mut() {
+                                        let name = module.as_ref().manifest().name;
+                                        let value = &modules_map[name];
+                                        if let Err(e) = module.as_ref().validate_config(value) {
+                                            errors.push((name.to_string(), e));
+                                        } else {
+                                            self.remove_subscriptions(
+                                                &mut event_loop.handle(),
+                                                *mid,
+                                            );
+                                            module.as_mut().config_updated(&mut self.engine, value);
+                                            self.add_subscriptions(
+                                                &mut event_loop.handle(),
+                                                mid,
+                                                module,
+                                            );
+                                        }
                                     }
+                                    self.modules = modules;
                                 }
+                                self.config = value;
 
                                 // TODO: show the dialog when error
                                 dbg!(errors);
@@ -442,8 +551,6 @@ impl<'a> Orbit<'a> {
                     }
                 }
             }
-
-            self.tick_all_targets(&orbit_loop);
         }
 
         self.d_server.stop();
@@ -454,6 +561,6 @@ impl<'a> Orbit<'a> {
 pub fn main() {
     // TODO: get config_path from args
 
-    let orbit = Orbit::new(None).expect("woops");
+    let mut orbit = Orbit::new(None).expect("woops");
     orbit.run();
 }

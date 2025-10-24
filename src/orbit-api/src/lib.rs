@@ -1,4 +1,4 @@
-use std::{any::Any, sync::atomic::AtomicBool};
+use std::{fmt::Debug, sync::atomic::AtomicBool, time::Duration};
 
 use serde::{Serialize, de::DeserializeOwned};
 use ui::{
@@ -43,7 +43,16 @@ impl OrbitLoop {
 
 #[derive(Debug)]
 pub struct ErasedMsg {
-    pub(crate) inner: Box<dyn Any + Send>,
+    pub(crate) inner: Box<dyn crate::runtime::erased::DynMsg>,
+}
+
+// TODO: add from stream
+#[derive(Clone)]
+pub enum Subscription<M: Send + 'static> {
+    None,
+    Batch(Vec<Subscription<M>>),
+    Interval { every: Duration, message: M },
+    Timeout { after: Duration, message: M },
 }
 
 pub type Event<M> = ui::event::Event<M, SctkEvent>;
@@ -82,4 +91,8 @@ pub trait OrbitModule: Default + 'static {
         false
     }
     fn view(&self, _tid: &TargetId) -> Element<Self::Message>;
+
+    fn subscriptions(&self) -> Subscription<Self::Message> {
+        Subscription::None
+    }
 }

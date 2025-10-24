@@ -162,6 +162,18 @@ macro_rules! orbit_plugin {
                 let typed = < $ty as $crate::OrbitModule >::view(self.inner_ref(), tid);
                 $crate::runtime::erased::erase_element(typed)
             }
+            fn subscriptions(&self) -> $crate::Subscription<$crate::ErasedMsg> {
+                fn map_sub<M: Send + Clone + ::std::fmt::Debug + 'static>(s: $crate::Subscription<M>) -> $crate::Subscription<$crate::ErasedMsg> {
+                    use $crate::Subscription::*;
+                    match s {
+                        None => None,
+                        Interval { every, message } => Interval { every, message: $crate::ErasedMsg::new(message) },
+                        Timeout  { after, message } => Timeout  { after, message: $crate::ErasedMsg::new(message) },
+                        Batch(v) => Batch(v.into_iter().map(map_sub).collect()),
+                    }
+                }
+                map_sub::<<$ty as $crate::OrbitModule>::Message>(<$ty as $crate::OrbitModule>::subscriptions(self.inner_ref()))
+            }
         }
 
         #[unsafe(no_mangle)]

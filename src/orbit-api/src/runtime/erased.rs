@@ -1,3 +1,6 @@
+use std::any::Any;
+use std::fmt::Debug;
+
 use ui::{
     context as ui_ctx,
     model::{Position, Size},
@@ -7,12 +10,34 @@ use ui::{
 
 use crate::ErasedMsg;
 
+pub trait DynMsg: Send + Debug + 'static {
+    fn as_any(&self) -> &dyn Any;
+    fn clone_box(&self) -> Box<dyn DynMsg>;
+}
+
+impl<T> DynMsg for T
+where
+    T: Any + Debug + Send + Clone + 'static,
+{
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn clone_box(&self) -> Box<dyn DynMsg> {
+        Box::new(self.clone())
+    }
+}
+
 impl ErasedMsg {
-    pub fn new<M: 'static + Send>(m: M) -> Self {
+    pub fn new<M: 'static + Debug + Clone + Send>(m: M) -> Self {
         Self { inner: Box::new(m) }
     }
     pub fn message<M: 'static + Clone>(&self) -> Option<M> {
-        self.inner.downcast_ref::<M>().cloned()
+        self.inner.as_any().downcast_ref::<M>().cloned()
+    }
+    pub fn clone_for_send(&self) -> Self {
+        Self {
+            inner: self.inner.clone_box(),
+        }
     }
 }
 
@@ -158,6 +183,6 @@ where
     Map::new(elem, f).einto()
 }
 
-pub fn erase_element<M: Send + 'static>(elem: Element<M>) -> Element<ErasedMsg> {
+pub fn erase_element<M: Send + Debug + Clone + 'static>(elem: Element<M>) -> Element<ErasedMsg> {
     map_element(elem, ErasedMsg::new)
 }

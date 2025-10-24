@@ -4,7 +4,7 @@ use ui::{
     widget::Element,
 };
 
-use crate::{ErasedMsg, Event, OrbitLoop};
+use crate::{ErasedMsg, Event, OrbitLoop, Subscription};
 
 pub mod erased;
 
@@ -24,7 +24,6 @@ pub trait OrbitModuleDyn: 'static {
     fn validate_config(&self, cfg: &serde_yml::Value) -> Result<(), String>;
     fn config_updated<'a>(&mut self, engine: &mut Engine<'a, ErasedMsg>, cfg: &serde_yml::Value);
 
-    // Rendering & pipelines
     fn pipelines(&self) -> Vec<(&'static str, PipelineFactoryFn)>;
     fn update<'a>(
         &mut self,
@@ -34,4 +33,6 @@ pub trait OrbitModuleDyn: 'static {
         orbit: &OrbitLoop,
     ) -> bool;
     fn view(&self, tid: &TargetId) -> Element<ErasedMsg>;
+
+    fn subscriptions(&self) -> Subscription<ErasedMsg>;
 }

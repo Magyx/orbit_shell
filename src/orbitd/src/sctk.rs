@@ -16,6 +16,18 @@ use ui::{
 };
 use wayland_client::{Connection, EventQueue, QueueHandle, globals::registry_queue_init};
 
+pub fn take_erased_from_message(evt: &ui::sctk::SctkEvent) -> Option<orbit_api::ErasedMsg> {
+    if let ui::sctk::SctkEvent::Message(arc) = evt {
+        let mut guard = arc.lock().unwrap();
+        guard
+            .take()
+            .and_then(|boxed| boxed.downcast::<orbit_api::ErasedMsg>().ok())
+            .map(|bx| *bx)
+    } else {
+        None
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct CreatedSurface {
     pub sid: SurfaceId,
@@ -28,6 +40,7 @@ pub struct SctkApp {
     pub event_queue: Option<EventQueue<SctkState>>,
     pub qh: QueueHandle<SctkState>,
     pub state: SctkState,
+    pub tx: loop_channel::Sender<SctkEvent>,
 }
 
 impl SctkApp {
@@ -70,6 +83,7 @@ impl SctkApp {
                 event_queue: Some(event_queue),
                 qh,
                 state,
+                tx,
             },
         ))
     }
