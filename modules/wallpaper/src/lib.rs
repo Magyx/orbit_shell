@@ -24,13 +24,13 @@ pub enum Msg {
     Tick,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct WidgetConfig {
     #[serde(rename = "type")]
     r#type: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Config {
     pub source: PathBuf,
     pub widgets: Vec<WidgetConfig>,
@@ -165,13 +165,17 @@ impl OrbitModule for Wallpaper {
         }
     }
 
-    fn config_updated<'a>(&mut self, engine: &mut Engine<'a, ErasedMsg>, cfg: &serde_yml::Value) {
-        if let Ok(parsed) = serde_yml::from_value::<Config>(cfg.clone()) {
-            if self.cfg.source != parsed.source {
-                Self::cleanup(self, engine);
-            }
-            self.cfg = parsed;
+    fn apply_config<'a>(
+        &mut self,
+        engine: &mut Engine<'a, ErasedMsg>,
+        config: Self::Config,
+        _options: &mut orbit_api::ui::sctk::Options,
+    ) -> bool {
+        if self.cfg != config {
+            Self::cleanup(self, engine);
+            self.cfg = config;
         }
+        false
     }
 
     fn update<'a>(

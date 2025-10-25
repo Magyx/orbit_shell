@@ -45,9 +45,23 @@ impl OrbitModule for Bar {
 
     fn cleanup<'a>(&mut self, _engine: &mut Engine<'a, ErasedMsg>) {}
 
-    fn config_updated<'a>(&mut self, _engine: &mut Engine<'a, ErasedMsg>, cfg: &serde_yml::Value) {
-        if let Ok(parsed) = serde_yml::from_value::<Config>(cfg.clone()) {
-            self.cfg = parsed;
+    fn apply_config<'a>(
+        &mut self,
+        _engine: &mut Engine<'a, ErasedMsg>,
+        config: Self::Config,
+        options: &mut orbit_api::ui::sctk::Options,
+    ) -> bool {
+        self.cfg = config;
+        let Options::Layer(layer) = options else {
+            return false;
+        };
+
+        if layer.size.height != self.cfg.height {
+            layer.size.height = self.cfg.height;
+            layer.exclusive_zone = self.cfg.height as i32;
+            true
+        } else {
+            false
         }
     }
 

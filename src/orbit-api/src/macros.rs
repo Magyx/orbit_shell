@@ -120,8 +120,15 @@ macro_rules! orbit_plugin {
             fn validate_config(&self, cfg: &serde_yml::Value) -> Result<(), String> {
                 < $ty as $crate::OrbitModule >::validate_config(cfg)
             }
-            fn config_updated<'a>(&mut self, engine: &mut Engine<'a, ErasedMsg>, cfg: &serde_yml::Value) {
-                < $ty as $crate::OrbitModule >::config_updated(self.inner_mut(), engine, cfg)
+            fn apply_config<'a>(
+                &mut self,
+                engine: &mut Engine<'a, ErasedMsg>,
+                config: &serde_yml::Value,
+                options: &mut $crate::ui::sctk::Options,
+            ) -> bool {
+                let parsed: < $ty as $crate::OrbitModule >::Config =
+                    serde_yml::from_value(config.clone()).unwrap_or_default();
+                < $ty as $crate::OrbitModule >::apply_config(self.inner_mut(), engine, parsed, options)
             }
 
             fn pipelines(&self) -> ::std::vec::Vec<(&'static str, $crate::ui::render::PipelineFactoryFn)> {

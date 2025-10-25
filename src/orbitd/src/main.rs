@@ -394,36 +394,66 @@ impl<'a> Orbit<'a> {
         }
     }
 
+    fn __realize_module(
+        &mut self,
+        tx: &mpsc::Sender<Event>,
+        loop_handle: &mut LoopHandle<SctkState>,
+        cfg: &serde_yml::Value,
+        mid: ModuleId,
+        module: &mut ModuleInfo,
+        opts: Option<ui::sctk::Options>,
+    ) {
+        if !module.toggled {
+            return;
+        }
+
+        let module_name = module.as_ref().manifest().name;
+
+        let opts_final = if let Some(o) = opts {
+            o
+        } else {
+            let mut o = module.as_ref().manifest().options.clone();
+            if let Some(cfg) = cfg.get(module_name) {
+                module.as_mut().apply_config(&mut self.engine, cfg, &mut o);
+            }
+            o
+        };
+
+        let items = self.sctk.create_surfaces(opts_final);
+        for CreatedSurface { sid, handles, size } in items {
+            let tid = self.engine.attach_target(Arc::new(handles), size);
+            self.by_module.entry(mid).or_default().push(tid);
+            self.by_surface.insert(sid, (tid, mid));
+        }
+
+        self.add_subscriptions(tx, loop_handle, &mid, module);
+        for (key, factory) in module.as_ref().pipelines() {
+            self.engine
+                .register_pipeline(PipelineKey::Other(key), factory);
+        }
+    }
+
     fn realize_module(
         &mut self,
         tx: &mpsc::Sender<Event>,
         loop_handle: &mut LoopHandle<SctkState>,
-        cfg: &mut serde_yml::Value,
+        cfg: &serde_yml::Value,
         mid: ModuleId,
         module: &mut ModuleInfo,
     ) {
-        if module.toggled {
-            let opts = module.as_ref().manifest().options.clone();
-            let items = self.sctk.create_surfaces(opts);
+        self.__realize_module(tx, loop_handle, cfg, mid, module, None);
+    }
 
-            for CreatedSurface { sid, handles, size } in items {
-                let tid = self.engine.attach_target(Arc::new(handles), size);
-                self.by_module.entry(mid).or_default().push(tid);
-                self.by_surface.insert(sid, (tid, mid));
-            }
-
-            let module_name = module.as_ref().manifest().name;
-            if let Some(cfg) = cfg.get(module_name) {
-                module.as_mut().config_updated(&mut self.engine, cfg);
-            }
-
-            self.add_subscriptions(tx, loop_handle, &mid, module);
-
-            for (key, factory) in module.as_ref().pipelines() {
-                self.engine
-                    .register_pipeline(PipelineKey::Other(key), factory);
-            }
-        }
+    fn realize_module_with_opts(
+        &mut self,
+        tx: &mpsc::Sender<Event>,
+        loop_handle: &mut LoopHandle<SctkState>,
+        cfg: &serde_yml::Value,
+        mid: ModuleId,
+        module: &mut ModuleInfo,
+        opts: ui::sctk::Options,
+    ) {
+        self.__realize_module(tx, loop_handle, cfg, mid, module, Some(opts));
     }
 
     fn unrealize_module(&mut self, loop_handle: &mut LoopHandle<SctkState>, mid: ModuleId) {
@@ -705,28 +735,56 @@ impl<'a> Orbit<'a> {
                                         self.realize_module(
                                             &tx,
                                             &mut event_loop.handle(),
-                                            &mut new_config,
+                                            &new_config,
                                             mid,
                                             module,
                                         );
-                                        // TODO: should force a rerender for mid (push sctk_event)
+                                        let _ = tx.send(Event::Ui(event::Ui::Orbit(
+                                            mid,
+                                            SctkEvent::Redraw,
+                                        )));
                                     }
 
                                     if !should_realize && config_changed {
                                         let module_name = module.as_ref().manifest().name;
                                         if let Some(cfg) = new_config.get(module_name) {
-                                            self.remove_subscriptions(
-                                                &mut event_loop.handle(),
-                                                mid,
+                                            let mut opts =
+                                                module.as_ref().manifest().options.clone();
+                                            let must_rebuild = module.as_mut().apply_config(
+                                                &mut self.engine,
+                                                cfg,
+                                                &mut opts,
                                             );
-                                            module.as_mut().config_updated(&mut self.engine, cfg);
-                                            self.add_subscriptions(
-                                                &tx,
-                                                &mut event_loop.handle(),
-                                                &mid,
-                                                module,
-                                            );
-                                            // TODO: should force a rerender for mid (push sctk_event)
+
+                                            if must_rebuild {
+                                                self.unrealize_module(
+                                                    &mut event_loop.handle(),
+                                                    mid,
+                                                );
+                                                self.realize_module_with_opts(
+                                                    &tx,
+                                                    &mut event_loop.handle(),
+                                                    &new_config,
+                                                    mid,
+                                                    module,
+                                                    opts,
+                                                );
+                                            } else {
+                                                self.remove_subscriptions(
+                                                    &mut event_loop.handle(),
+                                                    mid,
+                                                );
+                                                self.add_subscriptions(
+                                                    &tx,
+                                                    &mut event_loop.handle(),
+                                                    &mid,
+                                                    module,
+                                                );
+                                                let _ = tx.send(Event::Ui(event::Ui::Orbit(
+                                                    mid,
+                                                    SctkEvent::Redraw,
+                                                )));
+                                            }
                                         }
                                     }
                                 }

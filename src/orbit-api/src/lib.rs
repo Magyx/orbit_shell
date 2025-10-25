@@ -75,11 +75,13 @@ pub trait OrbitModule: Default + 'static {
             .map(|_: Self::Config| ())
             .map_err(|e| e.to_string())
     }
-    fn config_updated<'a>(
+    fn apply_config<'a>(
         &mut self,
         _engine: &mut Engine<'a, ErasedMsg>,
-        _config: &serde_yml::Value,
-    ) {
+        _config: Self::Config,
+        _options: &mut ui::sctk::Options,
+    ) -> bool {
+        false
     }
 
     // UI

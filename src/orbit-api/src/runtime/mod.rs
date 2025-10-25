@@ -22,8 +22,12 @@ pub trait OrbitModuleDyn: 'static {
 
     fn init_config(&self, cfg: &mut serde_yml::Value);
     fn validate_config(&self, cfg: &serde_yml::Value) -> Result<(), String>;
-    fn config_updated<'a>(&mut self, engine: &mut Engine<'a, ErasedMsg>, cfg: &serde_yml::Value);
-
+    fn apply_config<'a>(
+        &mut self,
+        engine: &mut Engine<'a, ErasedMsg>,
+        config: &serde_yml::Value,
+        options: &mut ui::sctk::Options,
+    ) -> bool;
     fn pipelines(&self) -> Vec<(&'static str, PipelineFactoryFn)>;
     fn update<'a>(
         &mut self,
