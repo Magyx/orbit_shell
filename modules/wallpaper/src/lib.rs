@@ -18,8 +18,6 @@ use orbit_api::{
 };
 use serde::{Deserialize, Serialize};
 
-mod helpers;
-
 #[derive(Clone, Debug)]
 pub enum Msg {
     None,
@@ -40,10 +38,9 @@ pub struct Config {
 
 impl Default for Config {
     fn default() -> Self {
-        let home = helpers::xdg_home().canonicalize().unwrap();
-
+        let home = xdg_user::pictures().unwrap_or_default().unwrap_or_default();
         Self {
-            source: home.join("Pictures/Wallpapers"),
+            source: home.join("Wallpapers"),
             widgets: Vec::new(),
         }
     }
