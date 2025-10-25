@@ -641,24 +641,23 @@ impl<'a> Orbit<'a> {
                             else {
                                 continue;
                             };
-                            let mut module = self.modules.remove(&mid).expect("just found");
 
+                            let mut module = self.modules.remove(&mid).expect("just found");
                             if module.toggled {
-                                self.unrealize_module(&mut event_loop.handle(), mid);
                                 module.toggled = false;
+                                self.unrealize_module(&mut event_loop.handle(), mid);
                             } else {
-                                let mut config = std::mem::take(&mut self.config);
+                                let config = std::mem::take(&mut self.config);
+                                module.toggled = true;
                                 self.realize_module(
                                     &tx,
                                     &mut event_loop.handle(),
-                                    &mut config,
+                                    &config,
                                     mid,
                                     &mut module,
                                 );
                                 self.config = config;
-                                module.toggled = true;
                             }
-
                             self.modules.insert(mid, module);
                         }
                         DbusEvent::Exit => {
@@ -791,7 +790,6 @@ impl<'a> Orbit<'a> {
                                 self.modules = modules;
 
                                 self.config = new_config;
-
                                 if let Err(e) =
                                     config::store_to_cfg(&self.config_path, &self.config)
                                 {
