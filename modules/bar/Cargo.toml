@@ -1,0 +1,13 @@
+[package]
+name = "bar"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+orbit-api = { path = "../../src/orbit-api" }
+serde = "1.0.228"
+serde_yml = "0.0.12"
+chrono = "0.4.42"

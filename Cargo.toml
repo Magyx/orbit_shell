@@ -7,4 +7,5 @@ members = [
   "src/orbit-dbus",
   "xtask",
   "modules/wallpaper",
+  "modules/bar",
 ]
