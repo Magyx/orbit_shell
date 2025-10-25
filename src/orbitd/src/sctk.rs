@@ -40,7 +40,6 @@ pub struct SctkApp {
     pub event_queue: Option<EventQueue<SctkState>>,
     pub qh: QueueHandle<SctkState>,
     pub state: SctkState,
-    pub tx: loop_channel::Sender<SctkEvent>,
 }
 
 impl SctkApp {
@@ -73,7 +72,7 @@ impl SctkApp {
             registry,
             session_lock,
             sctk_handler,
-            tx.clone(),
+            tx,
         );
 
         Ok((
@@ -83,7 +82,6 @@ impl SctkApp {
                 event_queue: Some(event_queue),
                 qh,
                 state,
-                tx,
             },
         ))
     }

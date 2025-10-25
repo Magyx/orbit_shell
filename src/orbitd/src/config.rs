@@ -162,7 +162,7 @@ pub fn load_cfg(base: &Path) -> Result<serde_yml::Value, &'static str> {
     }
 }
 
-pub fn store_cfg(base: &Path, cfg: &serde_yml::Value) -> Result<(), &'static str> {
+pub fn store_to_cfg(base: &Path, cfg: &serde_yml::Value) -> Result<(), &'static str> {
     let s = serde_yml::to_string(cfg).map_err(|_| "failed to serialize config.yaml")?;
     fs::write(cfg_path(base), s).map_err(|_| "failed to write config.yaml")
 }
