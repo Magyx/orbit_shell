@@ -14,9 +14,11 @@ pub mod runtime;
 
 mod macros;
 
+// TODO: need to add a way for the modules to signal they want to be closed
 #[derive(Debug)]
 pub struct OrbitLoop {
     exit: AtomicBool,
+    // tx: calloop::channel::Channel<>
 }
 
 impl Default for OrbitLoop {
@@ -46,7 +48,7 @@ pub struct ErasedMsg {
     pub(crate) inner: Box<dyn crate::runtime::erased::DynMsg>,
 }
 
-// TODO: add from stream
+// TODO: add from stream/async
 #[derive(Clone)]
 pub enum Subscription<M: Send + 'static> {
     None,

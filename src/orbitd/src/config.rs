@@ -1,5 +1,5 @@
 use std::{
-    env, fs,
+    fs,
     path::{Path, PathBuf},
     sync::mpsc,
     thread::JoinHandle,
@@ -134,16 +134,7 @@ pub fn ensure_exists(base: &PathBuf) -> Result<(), &'static str> {
 }
 
 pub fn xdg_config_home() -> PathBuf {
-    let base = env::var_os("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            let mut home = env::var_os("HOME")
-                .map(PathBuf::from)
-                .expect("HOME not set");
-            home.push(".config");
-            home
-        });
-
+    let base = xdg::BaseDirectories::new().config_home.unwrap_or_default();
     base.join("orbit")
 }
 
