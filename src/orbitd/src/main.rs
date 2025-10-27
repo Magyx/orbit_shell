@@ -709,8 +709,8 @@ impl<'a> Orbit<'a> {
                                     };
 
                                     if should_unrealize {
-                                        self.unrealize_module(&mut event_loop.handle(), mid);
                                         module.toggled = false;
+                                        self.unrealize_module(&mut event_loop.handle(), mid);
                                     }
 
                                     if should_realize || config_changed {
@@ -731,17 +731,15 @@ impl<'a> Orbit<'a> {
 
                                     if should_realize {
                                         module.toggled = module.as_ref().manifest().show_on_startup;
-                                        self.realize_module(
-                                            &tx,
-                                            &mut event_loop.handle(),
-                                            &new_config,
-                                            mid,
-                                            module,
-                                        );
-                                        let _ = tx.send(Event::Ui(event::Ui::Orbit(
-                                            mid,
-                                            SctkEvent::Redraw,
-                                        )));
+                                        if module.toggled {
+                                            self.realize_module(
+                                                &tx,
+                                                &mut event_loop.handle(),
+                                                &new_config,
+                                                mid,
+                                                module,
+                                            );
+                                        }
                                     }
 
                                     if !should_realize && config_changed {
