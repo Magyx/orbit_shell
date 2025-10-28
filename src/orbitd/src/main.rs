@@ -90,11 +90,12 @@ struct Orbit<'a> {
 
 impl<'a> Orbit<'a> {
     fn new(config_path: Option<PathBuf>) -> Result<Self, String> {
+        let config_path = config_path.unwrap_or_else(config::xdg_config_home);
+        config::ensure_exists(&config_path)?;
+
         let (sctk_rx, sctk) = SctkApp::new()?;
         let mut engine = Engine::default();
 
-        let config_path = config_path.unwrap_or_else(config::xdg_config_home);
-        config::ensure_exists(&config_path)?;
         let mut config = config::load_cfg(&config_path).map_err(|e| e.to_string())?;
         let modules =
             Self::discover_and_load_modules(&mut config, &config_path, &mut engine, None)?;
@@ -538,7 +539,7 @@ impl<'a> Orbit<'a> {
             self.modules = modules;
         }
 
-        while !orbit_loop.should_close() {
+        while !orbit_loop.orbit_should_close() {
             _ = event_loop.dispatch(None, &mut self.sctk.state);
 
             while let Ok(e) = rx.try_recv() {
@@ -661,7 +662,7 @@ impl<'a> Orbit<'a> {
                             self.modules.insert(mid, module);
                         }
                         DbusEvent::Exit => {
-                            orbit_loop.close();
+                            orbit_loop.close_orbit();
                             event_loop.get_signal().stop();
                         }
                     },

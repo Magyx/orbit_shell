@@ -126,6 +126,7 @@ pub fn ensure_exists(base: &PathBuf) -> Result<(), &'static str> {
     fs::create_dir_all(base).map_err(|_| "failed to create config dir")?;
     fs::create_dir_all(modules_dir(base)).map_err(|_| "failed to create modules dir")?;
 
+    // TODO: modules should be ro
     let config = cfg_path(base);
     if !config.exists() {
         fs::write(&config, "modules: {}\n").map_err(|_| "failed to init config.yaml")?;

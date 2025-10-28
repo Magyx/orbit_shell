@@ -1,11 +1,13 @@
-use std::any::Any;
+use std::cell::RefCell;
 use std::fmt::Debug;
+use std::marker::PhantomData;
+use std::{any::Any, rc::Rc};
 
 use ui::{
     context as ui_ctx,
-    model::{Position, Size},
+    layout::Node,
     primitive::Instance,
-    widget::{Element, Layout, Widget},
+    widget::{Element, IntoElement, Widget},
 };
 
 use crate::ErasedMsg;
@@ -41,148 +43,163 @@ impl ErasedMsg {
     }
 }
 
+fn clone_ui_state_to<M2, N2>(from: &ui_ctx::Context<N2>) -> ui_ctx::Context<M2> {
+    let mut tmp = ui_ctx::Context::<M2>::new();
+    tmp.mouse_pos = from.mouse_pos;
+    tmp.mouse_down = from.mouse_down;
+    tmp.mouse_pressed = from.mouse_pressed;
+    tmp.mouse_released = from.mouse_released;
+    tmp.hot_item = from.hot_item;
+    tmp.active_item = from.active_item;
+    tmp.kbd_focus_item = from.kbd_focus_item;
+    tmp
+}
+
+fn copy_ui_state_back<M2, N2>(to: &mut ui_ctx::Context<N2>, from: ui_ctx::Context<M2>) {
+    to.mouse_pos = from.mouse_pos;
+    to.mouse_down = from.mouse_down;
+    to.mouse_pressed = from.mouse_pressed;
+    to.mouse_released = from.mouse_released;
+    to.hot_item = from.hot_item;
+    to.active_item = from.active_item;
+    to.kbd_focus_item = from.kbd_focus_item;
+}
+
+pub fn erase_element<M: Send + Debug + Clone + 'static>(elem: Element<M>) -> Element<ErasedMsg> {
+    map_element(elem, ErasedMsg::new)
+}
+
 pub fn map_element<M, N, F>(elem: Element<M>, f: F) -> Element<N>
 where
     M: 'static,
     N: 'static,
     F: Fn(M) -> N + 'static,
 {
-    struct Map<M, N> {
-        inner: Element<M>,
-        map: Box<dyn Fn(M) -> N>,
-    }
-
-    impl<M, N> Map<M, N> {
-        fn new(inner: Element<M>, f: impl Fn(M) -> N + 'static) -> Self {
-            Self {
-                inner,
-                map: Box::new(f),
-            }
-        }
-    }
-
-    impl<M, N> Widget<N> for Map<M, N>
-    where
-        M: 'static,
-        N: 'static,
-    {
-        /* ----- identity ----- */
-        fn id(&self) -> ui_ctx::Id {
-            self.inner.id()
-        }
-        fn position(&self) -> &Position<i32> {
-            self.inner.position()
-        }
-        fn layout(&self) -> &Layout {
-            self.inner.layout()
-        }
-
-        /* ----- layout ----- */
-        fn fit_width(&mut self, ctx: &mut ui_ctx::LayoutCtx<N>) -> Layout {
-            let mut tmp_ui: ui_ctx::Context<M> = ui_ctx::Context::new();
-            let mut tmp = ui_ctx::LayoutCtx {
-                globals: ctx.globals,
-                ui: &mut tmp_ui,
-                text: ctx.text,
-            };
-            self.inner.fit_width(&mut tmp)
-        }
-        fn grow_width(&mut self, ctx: &mut ui_ctx::LayoutCtx<N>, parent_width: i32) {
-            let mut tmp_ui: ui_ctx::Context<M> = ui_ctx::Context::new();
-            let mut tmp = ui_ctx::LayoutCtx {
-                globals: ctx.globals,
-                ui: &mut tmp_ui,
-                text: ctx.text,
-            };
-            self.inner.grow_width(&mut tmp, parent_width)
-        }
-        fn fit_height(&mut self, ctx: &mut ui_ctx::LayoutCtx<N>) -> Layout {
-            let mut tmp_ui: ui_ctx::Context<M> = ui_ctx::Context::new();
-            let mut tmp = ui_ctx::LayoutCtx {
-                globals: ctx.globals,
-                ui: &mut tmp_ui,
-                text: ctx.text,
-            };
-            self.inner.fit_height(&mut tmp)
-        }
-        fn grow_height(&mut self, ctx: &mut ui_ctx::LayoutCtx<N>, parent_height: i32) {
-            let mut tmp_ui: ui_ctx::Context<M> = ui_ctx::Context::new();
-            let mut tmp = ui_ctx::LayoutCtx {
-                globals: ctx.globals,
-                ui: &mut tmp_ui,
-                text: ctx.text,
-            };
-            self.inner.grow_height(&mut tmp, parent_height)
-        }
-        fn place(&mut self, ctx: &mut ui_ctx::LayoutCtx<N>, position: Position<i32>) -> Size<i32> {
-            let mut tmp_ui: ui_ctx::Context<M> = ui_ctx::Context::new();
-            let mut tmp = ui_ctx::LayoutCtx {
-                globals: ctx.globals,
-                ui: &mut tmp_ui,
-                text: ctx.text,
-            };
-            self.inner.place(&mut tmp, position)
-        }
-
-        /* ----- paint ----- */
-        fn draw_self(&self, ctx: &mut ui_ctx::PaintCtx, instances: &mut Vec<Instance>) {
-            self.inner.draw_self(ctx, instances)
-        }
-        #[doc(hidden)]
-        fn for_each_child(&self, f: &mut dyn for<'a> FnMut(&'a dyn Widget<N>)) {
-            let mut wrap = |w: &dyn Widget<M>| {
-                let _ = w;
-            };
-            self.inner.for_each_child(&mut wrap);
-            let _ = f;
-        }
-        #[doc(hidden)]
-        fn __paint(
-            &self,
-            ctx: &mut ui_ctx::PaintCtx,
-            instances: &mut Vec<Instance>,
-            t: &ui::widget::internal::PaintToken,
-            debug_on: bool,
-        ) {
-            self.inner.__paint(ctx, instances, t, debug_on)
-        }
-
-        fn handle(&mut self, ctx: &mut ui_ctx::EventCtx<N>) {
-            let mut tmp = ui_ctx::Context::<M>::new();
-            tmp.mouse_pos = ctx.ui.mouse_pos;
-            tmp.mouse_down = ctx.ui.mouse_down;
-            tmp.mouse_pressed = ctx.ui.mouse_pressed;
-            tmp.mouse_released = ctx.ui.mouse_released;
-            tmp.hot_item = ctx.ui.hot_item;
-            tmp.active_item = ctx.ui.active_item;
-            tmp.kbd_focus_item = ctx.ui.kbd_focus_item;
-
-            self.inner.handle(&mut ui_ctx::EventCtx {
-                globals: ctx.globals,
-                ui: &mut tmp,
-            });
-
-            if tmp.take_redraw() {
-                ctx.ui.request_redraw();
-            }
-
-            for m in tmp.take() {
-                ctx.ui.emit((self.map)(m));
-            }
-
-            ctx.ui.mouse_pos = tmp.mouse_pos;
-            ctx.ui.mouse_down = tmp.mouse_down;
-            ctx.ui.mouse_pressed = tmp.mouse_pressed;
-            ctx.ui.mouse_released = tmp.mouse_released;
-            ctx.ui.hot_item = tmp.hot_item;
-            ctx.ui.active_item = tmp.active_item;
-            ctx.ui.kbd_focus_item = tmp.kbd_focus_item;
-        }
-    }
-
-    Map::new(elem, f).einto()
+    Element::new(MappedNode {
+        root: Rc::new(RefCell::new(elem)),
+        f: Rc::new(f),
+        path: Vec::new(),
+        children: Vec::new(),
+        phantom: PhantomData,
+    })
 }
 
-pub fn erase_element<M: Send + Debug + Clone + 'static>(elem: Element<M>) -> Element<ErasedMsg> {
-    map_element(elem, ErasedMsg::new)
+struct MappedNode<M, N, F> {
+    root: Rc<RefCell<Element<M>>>,
+    f: Rc<F>,
+    path: Vec<usize>,
+    children: Vec<MappedNode<M, N, F>>,
+    phantom: PhantomData<N>,
+}
+
+impl<M, N, F> IntoElement for MappedNode<M, N, F> {}
+
+impl<M, N, F> MappedNode<M, N, F>
+where
+    F: Fn(M) -> N + 'static,
+{
+    fn with_target<R>(&self, mut with: impl FnMut(&mut dyn Widget<M>) -> R) -> R {
+        let mut root = self.root.borrow_mut();
+        let mut cur: &mut dyn Widget<M> = root.as_mut();
+        for &idx in &self.path {
+            cur = cur.child_mut(idx);
+        }
+        with(cur)
+    }
+
+    fn ensure_children_sized(&mut self, desired: usize) {
+        if self.children.len() == desired {
+            return;
+        }
+        self.children.clear();
+        self.children.reserve(desired);
+        for i in 0..desired {
+            self.children.push(MappedNode {
+                root: Rc::clone(&self.root),
+                f: Rc::clone(&self.f),
+                path: {
+                    let mut p = self.path.clone();
+                    p.push(i);
+                    p
+                },
+                children: Vec::new(),
+                phantom: PhantomData,
+            });
+        }
+    }
+}
+
+impl<M, N, F> Widget<N> for MappedNode<M, N, F>
+where
+    M: 'static,
+    N: 'static,
+    F: Fn(M) -> N + 'static,
+{
+    /* ----- layout ----- */
+    fn layout<'a>(&mut self, ctx: &mut ui_ctx::LayoutCtx<'a, N>) -> Node {
+        let mut tmp_ui = clone_ui_state_to::<M, N>(ctx.ui);
+        let mut m_ctx = ui_ctx::LayoutCtx {
+            globals: ctx.globals,
+            ui: &mut tmp_ui,
+            text: ctx.text,
+        };
+
+        let out = self.with_target(|w| w.layout(&mut m_ctx));
+
+        copy_ui_state_back(ctx.ui, tmp_ui);
+        out
+    }
+
+    fn set_layout(&mut self, x: i32, y: i32, w: i32, h: i32) {
+        self.with_target(|widget| widget.set_layout(x, y, w, h));
+    }
+
+    fn child_count(&self) -> usize {
+        self.with_target(|w| w.child_count())
+    }
+
+    fn child_mut(&mut self, idx: usize) -> &mut dyn Widget<N> {
+        let count = self.child_count();
+        self.ensure_children_sized(count);
+        &mut self.children[idx]
+    }
+
+    fn min_height_for_width<'a>(
+        &mut self,
+        ctx: &mut ui_ctx::LayoutCtx<'a, N>,
+        width: i32,
+    ) -> Option<i32> {
+        let mut tmp_ui = clone_ui_state_to::<M, N>(ctx.ui);
+        let mut m_ctx = ui_ctx::LayoutCtx {
+            globals: ctx.globals,
+            ui: &mut tmp_ui,
+            text: ctx.text,
+        };
+        let r = self.with_target(|w| w.min_height_for_width(&mut m_ctx, width));
+        copy_ui_state_back(ctx.ui, tmp_ui);
+        r
+    }
+
+    /* ----- paint ----- */
+    fn paint(&mut self, ctx: &mut ui_ctx::PaintCtx, out: &mut Vec<Instance>) {
+        self.with_target(|w| w.paint(ctx, out));
+    }
+
+    /* ----- interaction ----- */
+    fn handle(&mut self, ctx: &mut ui_ctx::EventCtx<N>) {
+        let mut tmp_ui = clone_ui_state_to::<M, N>(ctx.ui);
+        let mut m_ctx = ui_ctx::EventCtx {
+            globals: ctx.globals,
+            ui: &mut tmp_ui,
+        };
+
+        self.with_target(|w| w.handle(&mut m_ctx));
+
+        let msgs = m_ctx.ui.take();
+        for m in msgs {
+            ctx.ui.emit((self.f)(m));
+        }
+
+        copy_ui_state_back(ctx.ui, tmp_ui);
+    }
 }

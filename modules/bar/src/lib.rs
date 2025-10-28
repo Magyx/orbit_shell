@@ -3,10 +3,11 @@ use std::time::Duration;
 use orbit_api::{
     ErasedMsg, Event, OrbitLoop, OrbitModule, Subscription, orbit_plugin,
     ui::{
+        el,
         graphics::{Engine, TargetId},
         model::Size,
         sctk::{Anchor, KeyboardInteractivity, Layer, LayerOptions, Options, OutputSet},
-        widget::{Column, Element, Length, Row, Spacer, Text, Widget as _},
+        widget::{Column, Element, Length, Row, Spacer, Text},
     },
 };
 use serde::{Deserialize, Serialize};
@@ -80,19 +81,18 @@ impl OrbitModule for Bar {
     }
 
     fn view(&self, _tid: &TargetId) -> Element<Self::Message> {
-        Row::new(vec![
-            Spacer::new(Size::splat(Length::Grow)).einto(),
-            Column::new(vec![
-                Spacer::new(Size::splat(Length::Grow)).einto(),
-                Text::new(self.now.format(&self.cfg.time_format).to_string(), 18.0).einto(),
-                Spacer::new(Size::splat(Length::Grow)).einto(),
+        Row::new(el![
+            Spacer::new(Size::splat(Length::Grow)),
+            Column::new(el![
+                Spacer::new(Size::splat(Length::Grow)),
+                Text::new(self.now.format(&self.cfg.time_format).to_string(), 18.0),
+                Spacer::new(Size::splat(Length::Grow)),
             ])
-            .size(Size::new(Length::Fit, Length::Grow))
-            .einto(),
-            Spacer::new(Size::splat(Length::Grow)).einto(),
+            .size(Size::new(Length::Fit, Length::Grow)),
+            Spacer::new(Size::splat(Length::Grow)),
         ])
         .size(Size::splat(Length::Grow))
-        .einto()
+        .into()
     }
 
     fn subscriptions(&self) -> Subscription<Self::Message> {

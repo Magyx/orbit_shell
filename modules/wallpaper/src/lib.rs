@@ -9,11 +9,12 @@ use std::{
 use orbit_api::{
     ErasedMsg, Event, OrbitLoop, OrbitModule, Subscription, orbit_plugin,
     ui::{
+        el,
         graphics::{Engine, TargetId},
         model::Size,
         render::texture::TextureHandle,
         sctk::{Anchor, KeyboardInteractivity, Layer, LayerOptions, Options, OutputSet},
-        widget::{Container, Element, Image, Length, Text, Widget as _},
+        widget::{Element, Image, Length, Overlay, Text},
     },
 };
 use serde::{Deserialize, Serialize};
@@ -200,19 +201,16 @@ impl OrbitModule for Wallpaper {
         use Length::{Fit, Grow};
 
         let Some(target) = self.targets.get(tid) else {
-            return Container::new(vec![Text::new("No image", 32.0).einto()])
+            return Overlay::new(el![Text::new("No image", 32.0)])
                 .size(Size::new(Grow, Grow))
-                .einto();
+                .into();
         };
 
-        let img = Image::new(Size::splat(Grow), target.tex).einto();
-        let clock = Text::new(target.time.format("%H:%M:%S").to_string(), 32.0)
-            .size(Size::splat(Fit))
-            .einto();
+        let img = Image::new(Size::splat(Grow), target.tex);
+        let clock =
+            Text::new(target.time.format("%H:%M:%S").to_string(), 32.0).size(Size::splat(Fit));
 
-        Container::new(vec![img, clock])
-            .size(Size::splat(Grow))
-            .einto()
+        Overlay::new(el![img, clock]).size(Size::splat(Grow)).into()
     }
 
     fn subscriptions(&self) -> Subscription<Self::Message> {

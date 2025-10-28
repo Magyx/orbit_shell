@@ -17,8 +17,8 @@ mod macros;
 // TODO: need to add a way for the modules to signal they want to be closed
 #[derive(Debug)]
 pub struct OrbitLoop {
-    exit: AtomicBool,
     // tx: calloop::channel::Channel<>
+    exit_orbit: AtomicBool,
 }
 
 impl Default for OrbitLoop {
@@ -30,16 +30,17 @@ impl Default for OrbitLoop {
 impl OrbitLoop {
     pub fn new() -> Self {
         Self {
-            exit: AtomicBool::new(false),
+            exit_orbit: AtomicBool::new(false),
         }
     }
 
-    pub fn should_close(&self) -> bool {
-        self.exit.load(std::sync::atomic::Ordering::Relaxed)
+    pub fn orbit_should_close(&self) -> bool {
+        self.exit_orbit.load(std::sync::atomic::Ordering::Relaxed)
     }
-
-    pub fn close(&self) {
-        self.exit.store(true, std::sync::atomic::Ordering::Relaxed);
+    pub fn close_orbit(&self) {
+        self.exit_orbit
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+    }
     }
 }
 
