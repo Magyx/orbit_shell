@@ -43,26 +43,32 @@ impl ErasedMsg {
     }
 }
 
-fn clone_ui_state_to<M2, N2>(from: &ui_ctx::Context<N2>) -> ui_ctx::Context<M2> {
+fn clone_ui_state_to<M2, N2>(from: &mut ui_ctx::Context<N2>) -> ui_ctx::Context<M2> {
     let mut tmp = ui_ctx::Context::<M2>::new();
     tmp.mouse_pos = from.mouse_pos;
-    tmp.mouse_down = from.mouse_down;
-    tmp.mouse_pressed = from.mouse_pressed;
-    tmp.mouse_released = from.mouse_released;
+    tmp.mouse_buttons_down = from.mouse_buttons_down;
+    tmp.mouse_buttons_pressed = from.mouse_buttons_pressed;
+    tmp.mouse_buttons_released = from.mouse_buttons_released;
     tmp.hot_item = from.hot_item;
     tmp.active_item = from.active_item;
     tmp.kbd_focus_item = from.kbd_focus_item;
+    tmp.view_state = std::mem::take(&mut from.view_state);
     tmp
 }
 
-fn copy_ui_state_back<M2, N2>(to: &mut ui_ctx::Context<N2>, from: ui_ctx::Context<M2>) {
+fn copy_ui_state_back<M2, N2>(to: &mut ui_ctx::Context<N2>, mut from: ui_ctx::Context<M2>) {
     to.mouse_pos = from.mouse_pos;
-    to.mouse_down = from.mouse_down;
-    to.mouse_pressed = from.mouse_pressed;
-    to.mouse_released = from.mouse_released;
+    to.mouse_buttons_down = from.mouse_buttons_down;
+    to.mouse_buttons_pressed = from.mouse_buttons_pressed;
+    to.mouse_buttons_released = from.mouse_buttons_released;
     to.hot_item = from.hot_item;
     to.active_item = from.active_item;
     to.kbd_focus_item = from.kbd_focus_item;
+    to.view_state = std::mem::take(&mut from.view_state);
+
+    if from.take_redraw() {
+        to.request_redraw();
+    }
 }
 
 pub fn erase_element<M: Send + Debug + Clone + 'static>(elem: Element<M>) -> Element<ErasedMsg> {
@@ -154,6 +160,14 @@ where
         self.with_target(|widget| widget.set_layout(x, y, w, h));
     }
 
+    fn supplied_id(&self) -> Option<ui_ctx::Id> {
+        self.with_target(|w| w.supplied_id())
+    }
+
+    fn set_id(&mut self, id: ui_ctx::Id) {
+        self.with_target(|w| w.set_id(id));
+    }
+
     fn child_count(&self) -> usize {
         self.with_target(|w| w.child_count())
     }
@@ -181,14 +195,26 @@ where
     }
 
     /* ----- paint ----- */
+    fn children_offset(
+        &self,
+        view_state: &mut std::collections::HashMap<ui_ctx::Id, Box<dyn Any>>,
+    ) -> (i32, i32) {
+        self.with_target(|w| w.children_offset(view_state))
+    }
+
     fn paint(&mut self, ctx: &mut ui_ctx::PaintCtx, out: &mut Vec<Instance>) {
         self.with_target(|w| w.paint(ctx, out));
+    }
+
+    fn paint_overlay(&mut self, ctx: &mut ui_ctx::PaintCtx, instancess: &mut Vec<Instance>) {
+        self.with_target(|w| w.paint_overlay(ctx, instancess));
     }
 
     /* ----- interaction ----- */
     fn handle(&mut self, ctx: &mut ui_ctx::EventCtx<N>) {
         let mut tmp_ui = clone_ui_state_to::<M, N>(ctx.ui);
         let mut m_ctx = ui_ctx::EventCtx {
+            event: ctx.event,
             globals: ctx.globals,
             ui: &mut tmp_ui,
         };

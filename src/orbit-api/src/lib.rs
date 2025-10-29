@@ -14,23 +14,24 @@ pub mod runtime;
 
 mod macros;
 
-// TODO: need to add a way for the modules to signal they want to be closed
+// TODO: need to add a way for the modules to signal they want to be closed/toggled to off
 #[derive(Debug)]
-pub struct OrbitLoop {
-    // tx: calloop::channel::Channel<>
+pub struct OrbitCtl {
     exit_orbit: AtomicBool,
+    exit_module: AtomicBool,
 }
 
-impl Default for OrbitLoop {
+impl Default for OrbitCtl {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl OrbitLoop {
+impl OrbitCtl {
     pub fn new() -> Self {
         Self {
             exit_orbit: AtomicBool::new(false),
+            exit_module: AtomicBool::new(false),
         }
     }
 
@@ -41,6 +42,9 @@ impl OrbitLoop {
         self.exit_orbit
             .store(true, std::sync::atomic::Ordering::Relaxed);
     }
+    pub fn close_module(&self) -> bool {
+        self.exit_module
+            .swap(false, std::sync::atomic::Ordering::Relaxed)
     }
 }
 
@@ -91,7 +95,7 @@ pub trait OrbitModule: Default + 'static {
         _tid: TargetId,
         _engine: &mut Engine<'a, ErasedMsg>,
         _event: &Event<Self::Message>,
-        _orbit: &OrbitLoop,
+        _orbit: &OrbitCtl,
     ) -> bool {
         false
     }

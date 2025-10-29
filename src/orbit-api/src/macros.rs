@@ -139,7 +139,7 @@ macro_rules! orbit_plugin {
                 tid: TargetId,
                 engine: &mut Engine<'a, ErasedMsg>,
                 event: &Event<ErasedMsg>,
-                orbit: &$crate::OrbitLoop,
+                orbit: &$crate::OrbitCtl,
             ) -> bool {
                 type __Msg = < $ty as $crate::OrbitModule >::Message;
 
@@ -149,9 +149,10 @@ macro_rules! orbit_plugin {
                     $crate::Event::CursorMoved { position } => {
                         Some($crate::Event::CursorMoved { position: *position })
                     }
-                    $crate::Event::MouseInput { mouse_down } => {
-                        Some($crate::Event::MouseInput { mouse_down: *mouse_down })
+                    $crate::Event::MouseInput { button, state } => {
+                        Some($crate::Event::MouseInput { button: *button, state: *state })
                     }
+                    $crate::Event::MouseWheel(d) => Some($crate::Event::MouseWheel(*d)),
 
                     $crate::Event::Key(k) => Some($crate::Event::Key(k.clone())),
                     $crate::Event::Text(t) => Some($crate::Event::Text(t.clone())),

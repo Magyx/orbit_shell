@@ -19,7 +19,7 @@ use ui::{
     sctk::{SctkEvent, SurfaceId, state::SctkState},
 };
 
-use orbit_api::{ErasedMsg, OrbitLoop, runtime::OrbitModuleDyn};
+use orbit_api::{ErasedMsg, OrbitCtl, runtime::OrbitModuleDyn};
 use orbit_dbus::DbusEvent;
 
 use crate::{
@@ -475,7 +475,7 @@ impl<'a> Orbit<'a> {
         self.sctk.destroy_surfaces(&sids);
     }
 
-    fn tick_all_targets(&mut self, orbit: &orbit_api::OrbitLoop) {
+    fn tick_all_targets(&mut self, orbit: &orbit_api::OrbitCtl) {
         for (&mid, tids) in self.by_module.clone().iter() {
             for &tid in tids {
                 if let Some(module) = self.modules.get_mut(&mid) {
@@ -501,7 +501,7 @@ impl<'a> Orbit<'a> {
         self.config_watcher.start(&self.config_path);
 
         let (tx, rx) = mpsc::channel::<Event>();
-        let orbit_loop = OrbitLoop::new();
+        let orbit_loop = OrbitCtl::new();
         let mut event_loop: EventLoop<SctkState> = EventLoop::try_new().expect("err");
         let _ = WaylandSource::new(self.sctk.conn.clone(), self.sctk.take_event_queu())
             .insert(event_loop.handle());

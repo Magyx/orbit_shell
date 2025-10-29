@@ -7,51 +7,33 @@ use std::{
 };
 
 use orbit_api::{
-    ErasedMsg, Event, OrbitLoop, OrbitModule, Subscription, orbit_plugin,
+    ErasedMsg, Event, OrbitCtl, OrbitModule, Subscription, orbit_plugin,
     ui::{
         el,
         graphics::{Engine, TargetId},
         model::Size,
         render::texture::TextureHandle,
         sctk::{Anchor, KeyboardInteractivity, Layer, LayerOptions, Options, OutputSet},
-        widget::{Element, Image, Length, Overlay, Text},
+        widget::{Element, Image, Length, Overlay, Rectangle, Text},
     },
 };
-use serde::{Deserialize, Serialize};
+
+use crate::config::{Config, WidgetConfig};
+
+mod config;
 
 #[derive(Clone, Debug)]
 pub enum Msg {
     None,
     Tick,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
-pub struct WidgetConfig {
-    #[serde(rename = "type")]
-    r#type: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct Config {
-    pub source: PathBuf,
-    pub widgets: Vec<WidgetConfig>,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        let home = xdg_user::pictures().unwrap_or_default().unwrap_or_default();
-        Self {
-            source: home.join("Wallpapers"),
-            widgets: Vec::new(),
-        }
-    }
+    Cycle,
 }
 
 #[derive(Debug)]
 pub struct PerTarget {
+    size: Option<Size<u32>>,
     file: PathBuf,
     tex: TextureHandle,
-    time: chrono::DateTime<chrono::Local>,
 }
 
 #[derive(Default, Debug)]
@@ -145,14 +127,42 @@ impl Wallpaper {
             self.targets.insert(
                 *tid,
                 PerTarget {
+                    size: None,
                     tex: handle,
                     file: p,
-                    time: chrono::Local::now(),
                 },
             );
             return true;
         }
         false
+    }
+
+    fn any_clock(&self) -> bool {
+        self.cfg
+            .widgets
+            .iter()
+            .any(|w| matches!(w, WidgetConfig::Clock { .. }))
+    }
+
+    fn clock_needs_seconds(&self) -> bool {
+        self.cfg.widgets.iter().any(|w| match w {
+            WidgetConfig::Clock { time_format, .. } => time_format.contains("%S"),
+        })
+    }
+
+    fn place_widget<E>(&self, tid: &TargetId, element: E, x: f32, y: f32, on: &mut Overlay<Msg>)
+    where
+        E: Into<Element<Msg>>,
+    {
+        if let Some(target) = self.targets.get(tid)
+            && let Some(t_size) = target.size
+        {
+            on.push(
+                element,
+                (t_size.width as f32 * x.clamp(0.0, 1.0)).ceil() as i32,
+                (t_size.height as f32 * y.clamp(0.0, 1.0)).ceil() as i32,
+            );
+        }
     }
 }
 
@@ -172,8 +182,10 @@ impl OrbitModule for Wallpaper {
         config: Self::Config,
         _options: &mut orbit_api::ui::sctk::Options,
     ) -> bool {
-        if self.cfg != config {
+        if self.cfg.source != config.source {
             Self::cleanup(self, engine);
+        }
+        if self.cfg != config {
             self.cfg = config;
         }
         false
@@ -184,40 +196,90 @@ impl OrbitModule for Wallpaper {
         tid: TargetId,
         engine: &mut Engine<'a, ErasedMsg>,
         event: &Event<Self::Message>,
-        _orbit: &OrbitLoop,
+        _orbit: &OrbitCtl,
     ) -> bool {
         let mut needs_redraw = self.ensure_texture_loaded(&tid, engine);
-        if let Event::Message(Msg::Tick) = event
-            && let Some(target) = self.targets.get_mut(&tid)
-        {
-            target.time = chrono::Local::now();
-            needs_redraw = true;
+
+        match event {
+            Event::Resized { size } => {
+                if let Some(target) = self.targets.get_mut(&tid) {
+                    target.size = Some(*size);
+                    needs_redraw = true;
+                }
+            }
+            Event::Message(Msg::Cycle) => {
+                if let Some(target) = self.targets.remove(&tid) {
+                    engine.unload_texture(target.tex);
+                    needs_redraw |= self.ensure_texture_loaded(&tid, engine);
+                }
+            }
+            Event::Message(Msg::Tick) => {
+                if self.any_clock() {
+                    needs_redraw = true;
+                }
+            }
+            _ => {}
         }
 
         needs_redraw
     }
 
     fn view(&self, tid: &TargetId) -> Element<Self::Message> {
-        use Length::{Fit, Grow};
+        use Length::Grow;
 
         let Some(target) = self.targets.get(tid) else {
-            return Overlay::new(el![Text::new("No image", 32.0)])
-                .size(Size::new(Grow, Grow))
-                .into();
+            return Rectangle::placeholder().into();
         };
 
-        let img = Image::new(Size::splat(Grow), target.tex);
-        let clock =
-            Text::new(target.time.format("%H:%M:%S").to_string(), 32.0).size(Size::splat(Fit));
+        let mut view =
+            Overlay::new(el![Image::new(Size::splat(Grow), target.tex)]).size(Size::splat(Grow));
 
-        Overlay::new(el![img, clock]).size(Size::splat(Grow)).into()
+        for w in self.cfg.widgets.iter() {
+            match w {
+                WidgetConfig::Clock {
+                    x,
+                    y,
+                    font_size,
+                    time_format,
+                } => {
+                    let time = chrono::Local::now().format(time_format).to_string();
+                    let text = Text::new(time, *font_size);
+                    self.place_widget(tid, text, *x, *y, &mut view);
+                }
+            }
+        }
+
+        view.into()
     }
 
     fn subscriptions(&self) -> Subscription<Self::Message> {
-        Subscription::Interval {
-            every: Duration::from_secs(1),
-            message: Msg::Tick,
+        let every_wall = self
+            .cfg
+            .cycle
+            .parse::<humantime::Duration>()
+            .unwrap_or(humantime::Duration::from(std::time::Duration::from_secs(
+                3600,
+            )))
+            .into();
+
+        let mut subs = vec![Subscription::Interval {
+            every: every_wall,
+            message: Msg::Cycle,
+        }];
+
+        if self.any_clock() {
+            let every_clock = if self.clock_needs_seconds() {
+                Duration::from_secs(1)
+            } else {
+                Duration::from_secs(60)
+            };
+            subs.push(Subscription::Interval {
+                every: every_clock,
+                message: Msg::Tick,
+            });
         }
+
+        Subscription::Batch(subs)
     }
 }
 

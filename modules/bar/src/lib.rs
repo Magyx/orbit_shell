@@ -1,11 +1,11 @@
 use std::time::Duration;
 
 use orbit_api::{
-    ErasedMsg, Event, OrbitLoop, OrbitModule, Subscription, orbit_plugin,
+    ErasedMsg, Event, OrbitCtl, OrbitModule, Subscription, orbit_plugin,
     ui::{
         el,
         graphics::{Engine, TargetId},
-        model::Size,
+        model::{Color, Size},
         sctk::{Anchor, KeyboardInteractivity, Layer, LayerOptions, Options, OutputSet},
         widget::{Column, Element, Length, Row, Spacer, Text},
     },
@@ -34,10 +34,19 @@ impl Default for Config {
     }
 }
 
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct Bar {
     now: chrono::DateTime<chrono::Local>,
     cfg: Config,
+}
+
+impl Default for Bar {
+    fn default() -> Self {
+        Self {
+            now: chrono::Local::now(),
+            cfg: Default::default(),
+        }
+    }
 }
 
 impl OrbitModule for Bar {
@@ -45,6 +54,23 @@ impl OrbitModule for Bar {
     type Message = Msg;
 
     fn cleanup<'a>(&mut self, _engine: &mut Engine<'a, ErasedMsg>) {}
+
+    fn validate_config(config: &serde_yml::Value) -> Result<(), String> {
+        #[derive(Deserialize)]
+        struct HeightOnly {
+            height: Option<u32>,
+        }
+
+        let parsed: HeightOnly =
+            serde_yml::from_value(config.clone()).map_err(|e| format!("invalid config: {e}"))?;
+
+        if let Some(h) = parsed.height
+            && h < 1
+        {
+            return Err("Height must be at least 1".into());
+        }
+        Ok(())
+    }
 
     fn apply_config<'a>(
         &mut self,
@@ -71,7 +97,7 @@ impl OrbitModule for Bar {
         _tid: TargetId,
         _engine: &mut Engine<'a, ErasedMsg>,
         event: &Event<Self::Message>,
-        _orbit: &OrbitLoop,
+        _orbit: &OrbitCtl,
     ) -> bool {
         if let Event::Message(Msg::Tick) = event {
             self.now = chrono::Local::now();
@@ -91,13 +117,30 @@ impl OrbitModule for Bar {
             .size(Size::new(Length::Fit, Length::Grow)),
             Spacer::new(Size::splat(Length::Grow)),
         ])
+        .color(Color::BLACK)
         .size(Size::splat(Length::Grow))
         .into()
     }
 
     fn subscriptions(&self) -> Subscription<Self::Message> {
+        fn interval_for_format(fmt: &str) -> Duration {
+            if fmt.contains("%f") {
+                return Duration::from_millis(100);
+            }
+            if fmt.contains("%S") {
+                return Duration::from_millis(500);
+            }
+            if fmt.contains("%M") {
+                return Duration::from_secs(1);
+            }
+            if fmt.contains("%H") {
+                return Duration::from_secs(60);
+            }
+
+            Duration::from_secs(30 * 60)
+        }
         Subscription::Interval {
-            every: Duration::from_secs(1),
+            every: interval_for_format(&self.cfg.time_format),
             message: Msg::Tick,
         }
     }

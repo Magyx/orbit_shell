@@ -4,7 +4,7 @@ use ui::{
     widget::Element,
 };
 
-use crate::{ErasedMsg, Event, OrbitLoop, Subscription};
+use crate::{ErasedMsg, Event, OrbitCtl, Subscription};
 
 pub mod erased;
 
@@ -34,7 +34,7 @@ pub trait OrbitModuleDyn: 'static {
         tid: TargetId,
         engine: &mut Engine<'a, ErasedMsg>,
         event: &Event<ErasedMsg>,
-        orbit: &OrbitLoop,
+        orbit: &OrbitCtl,
     ) -> bool;
     fn view(&self, tid: &TargetId) -> Element<ErasedMsg>;
 
