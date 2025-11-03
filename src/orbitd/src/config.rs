@@ -11,7 +11,7 @@ use calloop::channel as loop_channel;
 #[derive(Debug)]
 pub enum ConfigEvent {
     Reload(serde_yml::Value),
-    Err(String),
+    Err(Vec<String>),
 }
 
 pub struct ConfigWatcher {
@@ -90,7 +90,7 @@ impl ConfigWatcher {
                         if reloadish && last.elapsed() >= debounce {
                             let event = match load_cfg(&base) {
                                 Ok(v) => ConfigEvent::Reload(v),
-                                Err(e) => ConfigEvent::Err(e.into()),
+                                Err(e) => ConfigEvent::Err(vec![e.into()]),
                             };
                             let _ = tx.send(event);
                             last = Instant::now();

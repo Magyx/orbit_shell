@@ -35,6 +35,7 @@ use {
 
 mod config;
 mod dbus;
+mod dialog;
 mod event;
 mod module;
 mod sctk;
@@ -82,6 +83,8 @@ struct Orbit<'a> {
     config: serde_yml::Value,
     modules: HashMap<ModuleId, ModuleInfo>,
     subs: HashMap<ModuleId, Vec<RegistrationToken>>,
+    error_dialog: Vec<(TargetId, SurfaceId)>,
+    errors: Vec<String>,
 
     engine: Engine<'a, ErasedMsg>,
     by_module: HashMap<ModuleId, Vec<TargetId>>,
@@ -118,6 +121,8 @@ impl<'a> Orbit<'a> {
             config,
             modules,
             subs: HashMap::new(),
+            error_dialog: Vec::new(),
+            errors: Vec::new(),
 
             engine,
             by_module: HashMap::with_capacity(modules_len),
@@ -494,6 +499,16 @@ impl<'a> Orbit<'a> {
                 }
             }
         }
+        for (tid, _) in self.error_dialog.iter() {
+            let need = self.engine.poll(
+                tid,
+                &mut |_, _: &ui::event::Event<ErasedMsg, SctkEvent>, (), _| false,
+                &mut (),
+                orbit,
+            );
+            self.engine
+                .render_if_needed(tid, need, &dialog::error_view, &mut self.errors);
+        }
     }
 
     fn run(&mut self) {
@@ -563,6 +578,18 @@ impl<'a> Orbit<'a> {
                                 Some(sid) => {
                                     if let Some((tid, mid)) = self.by_surface.get(&sid) {
                                         handle_for(tid, mid, &sctk_event);
+                                    } else if !self.error_dialog.is_empty() {
+                                        for (tid, _) in
+                                            self.error_dialog.iter().filter(|(_, s)| *s == sid)
+                                        {
+                                            self.engine.handle_platform_event(
+                                                tid,
+                                                &sctk_event,
+                                                &mut |_, _, _, _| false,
+                                                &mut (),
+                                                &orbit_loop,
+                                            );
+                                        }
                                     }
                                 }
                                 None => {
@@ -666,146 +693,140 @@ impl<'a> Orbit<'a> {
                             event_loop.get_signal().stop();
                         }
                     },
-                    Event::Config(config_event) => {
-                        match config_event {
-                            ConfigEvent::Reload(mut new_config) => {
-                                if self.config == new_config {
+                    Event::Config(config_event) => match config_event {
+                        ConfigEvent::Reload(mut new_config) => {
+                            if self.config == new_config {
+                                continue;
+                            }
+
+                            let mut errors = Vec::new();
+                            let instructions =
+                                match Self::compare_configs(&self.config, &new_config) {
+                                    Ok(i) => i,
+                                    Err(e) => {
+                                        let _ = tx
+                                            .send(Event::Config(ConfigEvent::Err(vec![e.into()])));
+                                        continue;
+                                    }
+                                };
+                            let mid_by_name: HashMap<&_, _> = self
+                                .modules
+                                .iter()
+                                .map(|(&k, v)| (v.as_ref().manifest().name, k))
+                                .collect();
+                            let mut modules = std::mem::take(&mut self.modules);
+                            for (
+                                name,
+                                ConfigInstruction {
+                                    should_unrealize,
+                                    should_realize,
+                                    config_changed,
+                                },
+                            ) in instructions
+                            {
+                                let Some((&mid, module)) =
+                                    mid_by_name.get(name.as_str()).and_then(|mid| {
+                                        let module = modules.get_mut(mid)?;
+                                        Some((mid, module))
+                                    })
+                                else {
+                                    errors.push(format!("Module {} could not be found.", &name));
                                     continue;
+                                };
+
+                                if should_unrealize {
+                                    module.toggled = false;
+                                    self.unrealize_module(&mut event_loop.handle(), mid);
                                 }
 
-                                let instructions =
-                                    match Self::compare_configs(&self.config, &new_config) {
-                                        Ok(i) => i,
-                                        Err(e) => {
-                                            let _ =
-                                                tx.send(Event::Config(ConfigEvent::Err(e.into())));
-                                            continue;
-                                        }
-                                    };
-                                let mut errors = Vec::new();
-                                let mid_by_name: HashMap<&_, _> = self
-                                    .modules
-                                    .iter()
-                                    .map(|(&k, v)| (v.as_ref().manifest().name, k))
-                                    .collect();
-                                let mut modules = std::mem::take(&mut self.modules);
-                                for (
-                                    name,
-                                    ConfigInstruction {
-                                        should_unrealize,
-                                        should_realize,
-                                        config_changed,
-                                    },
-                                ) in instructions
-                                {
-                                    let Some((&mid, module)) =
-                                        mid_by_name.get(name.as_str()).and_then(|mid| {
-                                            let module = modules.get_mut(mid)?;
-                                            Some((mid, module))
-                                        })
-                                    else {
-                                        errors
-                                            .push(format!("Module {} could not be found.", &name));
+                                if should_realize || config_changed {
+                                    let module_name = module.as_ref().manifest().name;
+                                    let new_config_map = new_config
+                                        .as_mapping_mut()
+                                        .expect("should exist from compare_configs");
+                                    if let Err(e) = Self::load_module(
+                                        &mut self.engine,
+                                        new_config_map,
+                                        module,
+                                        &Value::String(module_name.into()),
+                                    ) {
+                                        errors.push(e);
                                         continue;
-                                    };
-
-                                    if should_unrealize {
-                                        module.toggled = false;
-                                        self.unrealize_module(&mut event_loop.handle(), mid);
                                     }
+                                }
 
-                                    if should_realize || config_changed {
-                                        let module_name = module.as_ref().manifest().name;
-                                        let new_config_map = new_config
-                                            .as_mapping_mut()
-                                            .expect("should exist from compare_configs");
-                                        if let Err(e) = Self::load_module(
-                                            &mut self.engine,
-                                            new_config_map,
+                                if should_realize {
+                                    module.toggled = module.as_ref().manifest().show_on_startup;
+                                    if module.toggled {
+                                        self.realize_module(
+                                            &tx,
+                                            &mut event_loop.handle(),
+                                            &new_config,
+                                            mid,
                                             module,
-                                            &Value::String(module_name.into()),
-                                        ) {
-                                            errors.push(e);
-                                            continue;
-                                        }
+                                        );
                                     }
+                                }
 
-                                    if should_realize {
-                                        module.toggled = module.as_ref().manifest().show_on_startup;
-                                        if module.toggled {
-                                            self.realize_module(
+                                if !should_realize && config_changed {
+                                    let module_name = module.as_ref().manifest().name;
+                                    if let Some(cfg) = new_config.get(module_name) {
+                                        let mut opts = module.as_ref().manifest().options.clone();
+                                        let must_rebuild = module.as_mut().apply_config(
+                                            &mut self.engine,
+                                            cfg,
+                                            &mut opts,
+                                        );
+
+                                        if must_rebuild {
+                                            self.unrealize_module(&mut event_loop.handle(), mid);
+                                            self.realize_module_with_opts(
                                                 &tx,
                                                 &mut event_loop.handle(),
                                                 &new_config,
                                                 mid,
                                                 module,
+                                                opts,
                                             );
-                                        }
-                                    }
-
-                                    if !should_realize && config_changed {
-                                        let module_name = module.as_ref().manifest().name;
-                                        if let Some(cfg) = new_config.get(module_name) {
-                                            let mut opts =
-                                                module.as_ref().manifest().options.clone();
-                                            let must_rebuild = module.as_mut().apply_config(
-                                                &mut self.engine,
-                                                cfg,
-                                                &mut opts,
+                                        } else {
+                                            self.remove_subscriptions(
+                                                &mut event_loop.handle(),
+                                                mid,
                                             );
-
-                                            if must_rebuild {
-                                                self.unrealize_module(
-                                                    &mut event_loop.handle(),
-                                                    mid,
-                                                );
-                                                self.realize_module_with_opts(
-                                                    &tx,
-                                                    &mut event_loop.handle(),
-                                                    &new_config,
-                                                    mid,
-                                                    module,
-                                                    opts,
-                                                );
-                                            } else {
-                                                self.remove_subscriptions(
-                                                    &mut event_loop.handle(),
-                                                    mid,
-                                                );
-                                                self.add_subscriptions(
-                                                    &tx,
-                                                    &mut event_loop.handle(),
-                                                    &mid,
-                                                    module,
-                                                );
-                                                let _ = tx.send(Event::Ui(event::Ui::Orbit(
-                                                    mid,
-                                                    SctkEvent::Redraw,
-                                                )));
-                                            }
+                                            self.add_subscriptions(
+                                                &tx,
+                                                &mut event_loop.handle(),
+                                                &mid,
+                                                module,
+                                            );
+                                            let _ = tx.send(Event::Ui(event::Ui::Orbit(
+                                                mid,
+                                                SctkEvent::Redraw,
+                                            )));
                                         }
                                     }
                                 }
-                                self.modules = modules;
+                            }
+                            self.modules = modules;
 
-                                self.config = new_config;
-                                if let Err(e) =
-                                    config::store_to_cfg(&self.config_path, &self.config)
+                            if errors.is_empty() {
+                                if let Err(e) = config::store_to_cfg(&self.config_path, &new_config)
                                 {
                                     errors.push(e.into());
-                                }
-
-                                if !errors.is_empty() {
-                                    let msg = errors.join("\n- ");
-                                    let _ = tx.send(Event::Config(ConfigEvent::Err(msg)));
+                                } else {
+                                    self.config = new_config;
+                                    self.hide_error();
                                 }
                             }
-                            ConfigEvent::Err(e) => {
-                                // TODO: show the dialog when error
-                                dbg!(e);
+                            if !errors.is_empty() {
+                                let _ = tx.send(Event::Config(ConfigEvent::Err(errors)));
                             }
                         }
-                    }
+                        ConfigEvent::Err(errors) => {
+                            dbg!(&errors);
+                            self.show_error(errors);
+                        }
+                    },
                 }
             }
         }
