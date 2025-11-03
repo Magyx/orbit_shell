@@ -210,7 +210,11 @@ impl OrbitModule for Wallpaper {
             Event::Message(Msg::Cycle) => {
                 if let Some(target) = self.targets.remove(&tid) {
                     engine.unload_texture(target.tex);
-                    needs_redraw |= self.ensure_texture_loaded(&tid, engine);
+                    let loaded = self.ensure_texture_loaded(&tid, engine);
+                    if loaded {
+                        self.targets.get_mut(&tid).expect("just loaded").size = target.size;
+                    }
+                    needs_redraw |= loaded;
                 }
             }
             Event::Message(Msg::Tick) => {
