@@ -171,16 +171,33 @@ impl<'a> Orbit<'a> {
         config_path: &Path,
         prev_module_len: Option<usize>,
     ) -> Result<Vec<ModuleInfo>, String> {
-        let mods_dir = config::modules_dir(config_path);
+        const SYSTEM_MODULES: &str = "/usr/lib/orbit/modules";
+
+        let user_dir_opt = config::modules_dir_if_exists(config_path);
+        let mut by_name: HashMap<String, PathBuf> = HashMap::new();
+
+        let push_dir = |map: &mut HashMap<String, PathBuf>, dir: &Path| -> Result<(), String> {
+            if let Ok(entries) = fs::read_dir(dir) {
+                for entry in entries {
+                    let path = entry.map_err(|e| e.to_string())?.path();
+                    if path.extension().map(|e| e == "so").unwrap_or(false)
+                        && let Some(name) = path.file_name().and_then(|n| n.to_str())
+                    {
+                        map.insert(name.to_string(), path);
+                    }
+                }
+            }
+            Ok(())
+        };
+
+        let _ = push_dir(&mut by_name, Path::new(SYSTEM_MODULES));
+        if let Some(user_dir) = user_dir_opt.as_deref() {
+            let _ = push_dir(&mut by_name, user_dir);
+        }
 
         let mut modules = Vec::with_capacity(prev_module_len.unwrap_or_default());
-        for entry in fs::read_dir(&mods_dir).map_err(|e| e.to_string())? {
-            let entry = entry.map_err(|e| e.to_string())?;
-            let path = entry.path();
-            if path.extension().map(|e| e == "so").unwrap_or(false) {
-                let module = ModuleInfo::new(Module::new(&path)?);
-                modules.push(module);
-            }
+        for path in by_name.values() {
+            modules.push(ModuleInfo::new(Module::new(path)?));
         }
         Ok(modules)
     }

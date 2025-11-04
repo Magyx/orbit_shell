@@ -124,9 +124,7 @@ impl Drop for ConfigWatcher {
 
 pub fn ensure_exists(base: &PathBuf) -> Result<(), &'static str> {
     fs::create_dir_all(base).map_err(|_| "failed to create config dir")?;
-    fs::create_dir_all(modules_dir(base)).map_err(|_| "failed to create modules dir")?;
 
-    // TODO: modules should be ro
     let config = cfg_path(base);
     if !config.exists() {
         fs::write(&config, "modules: {}\n").map_err(|_| "failed to init config.yaml")?;
@@ -139,8 +137,9 @@ pub fn xdg_config_home() -> PathBuf {
     base.join("orbit")
 }
 
-pub fn modules_dir(base: &Path) -> PathBuf {
-    base.join("modules")
+pub fn modules_dir_if_exists(config_path: &Path) -> Option<PathBuf> {
+    let dir = config_path.join("modules");
+    if dir.is_dir() { Some(dir) } else { None }
 }
 
 pub fn cfg_path(base: &Path) -> PathBuf {
