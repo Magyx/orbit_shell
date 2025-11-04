@@ -1,5 +1,5 @@
 pkgbase=orbitshell-git
-pkgname=('orbitd-git' 'orbitctl-git')
+pkgname=('orbitd-git' 'orbitctl-git' 'orbit-module-wallpaper-git' 'orbit-module-bar-git')
 pkgver=0.1.0
 pkgrel=0.1
 pkgdesc='Orbit shell daemon and CLI'
@@ -14,48 +14,35 @@ depends_orbitd_git=('wayland' 'libxkbcommon' 'vulkan-icd-loader' 'dbus')
 provides_orbitd_git=('orbitd')
 
 pkgdesc_orbitctl_git='Orbit shell command-line client'
-depends_orbitctl_git=('dbus')
-provides_orbitctl_git=('orbitctl' 'orbit')
+depends_orbitctl_git=('orbitd-git' 'dbus')
+provides_orbitctl_git=('orbit')
 
-source=("orbitshell::git+file://$startdir")
-sha256sums=('SKIP')
+pkgdesc_orbit_module_wallpaper_git='Orbit module: wallpaper'
+depends_orbit_module_wallpaper_git=('orbitd-git')
+provides_orbit_module_wallpaper_git=('orbit-module-wallpaper')
+
+pkgdesc_orbit_module_bar_git='Orbit module: bar'
+depends_orbit_module_bar_git=('orbitd-git')
+provides_orbit_module_bar_git=('orbit-module-bar')
+
+prepare() {
+  cd "$srcdir"
+  if [[ ! -d orbitshell ]]; then
+    git clone "$url" orbitshell
+  fi
+  cd orbitshell
+  git submodule update --init --recursive
+}
 
 build() {
-  cd "orbitshell"
-  if [[ -f Cargo.lock ]]; then
-    cargo build --release --locked -p orbitd -p orbit
-  else
-    cargo build --release -p orbitd -p orbit
-  fi
+  cd "$srcdir/orbitshell"
+  cargo build --workspace --release
 }
 
 package_orbitd-git() {
-  cd "orbitshell"
+  cd "$srcdir/orbitshell"
 
   install -Dm755 "target/release/orbitd" "$pkgdir/usr/bin/orbitd"
-
-  # D-Bus session auto-activation
-  install -Dm644 /dev/stdin \
-    "$pkgdir/usr/share/dbus-1/services/io.github.orbitshell.Orbit1.service" <<'EOF'
-[D-BUS Service]
-Name=io.github.orbitshell.Orbit1
-Exec=/usr/bin/orbitd
-EOF
-
-  # Optional systemd --user unit
-  install -Dm644 /dev/stdin \
-    "$pkgdir/usr/lib/systemd/user/orbitd.service" <<'EOF'
-[Unit]
-Description=Orbit shell daemon
-After=graphical-session.target
-
-[Service]
-ExecStart=/usr/bin/orbitd
-Restart=on-failure
-
-[Install]
-WantedBy=default.target
-EOF
 
   if [[ -f LICENSE ]]; then
     install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
@@ -63,12 +50,25 @@ EOF
 }
 
 package_orbitctl-git() {
-  cd "orbitshell"
+  cd "$srcdir/orbitshell"
 
-  install -Dm755 "target/release/orbit" "$pkgdir/usr/bin/orbitctl"
-  ln -s orbitctl "$pkgdir/usr/bin/orbit"
+  install -Dm755 "target/release/orbit" "$pkgdir/usr/bin/orbit"
 
   if [[ -f LICENSE ]]; then
     install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
   fi
+}
+
+package_orbit-module-wallpaper-git() {
+  cd "$srcdir/orbitshell"
+  install -d -m 755 "$pkgdir/usr/lib/orbit/modules"
+  install -Dm644 "target/release/libwallpaper.so" \
+    "$pkgdir/usr/lib/orbit/modules/wallpaper.so"
+}
+
+package_orbit-module-bar-git() {
+  cd "$srcdir/orbitshell"
+  install -d -m 755 "$pkgdir/usr/lib/orbit/modules"
+  install -Dm644 "target/release/libbar.so" \
+    "$pkgdir/usr/lib/orbit/modules/bar.so"
 }
