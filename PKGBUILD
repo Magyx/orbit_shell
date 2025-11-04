@@ -11,6 +11,9 @@ makedepends=('git' 'cargo' 'rust' 'pkgconf' 'wayland' 'libxkbcommon')
 
 pkgdesc_orbitd_git='Orbit shell daemon'
 depends_orbitd_git=('wayland' 'libxkbcommon' 'vulkan-icd-loader' 'dbus')
+optdepends_orbitd_git=('mesa: for Vulkan support on AMD/Intel hardware'
+  'vulkan-radeon: for AMD Radeon Vulkan support'
+  'nvidia-vulkan-utils: for NVIDIA Vulkan support')
 provides_orbitd_git=('orbitd')
 
 pkgdesc_orbitctl_git='Orbit shell command-line client'
