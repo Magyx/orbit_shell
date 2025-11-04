@@ -1,2 +1,5 @@
 /target
 /.vscode
+/src/orbitshell
+/pkg
+*.pkg.tar.zst
