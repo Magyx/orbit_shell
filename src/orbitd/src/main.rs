@@ -574,9 +574,13 @@ impl<'a> Orbit<'a> {
         while !orbit_loop.orbit_should_close() {
             _ = event_loop.dispatch(None, &mut self.sctk.state);
 
+            let mut need_tick = false;
+
             while let Ok(e) = rx.try_recv() {
                 match e {
                     Event::Ui(ui_event) => {
+                        need_tick = true;
+
                         let mut handle_for = |tid: &TargetId, mid: &ModuleId, event: &SctkEvent| {
                             if let Some(module) = self.modules.get_mut(mid) {
                                 self.engine.handle_platform_event(
@@ -625,8 +629,6 @@ impl<'a> Orbit<'a> {
                                 }
                             }
                         }
-
-                        self.tick_all_targets(&orbit_loop);
                     }
                     Event::Dbus(dbus_event) => match dbus_event {
                         DbusEvent::Reload(resp_tx) => {
@@ -845,6 +847,10 @@ impl<'a> Orbit<'a> {
                         }
                     },
                 }
+            }
+
+            if need_tick {
+                self.tick_all_targets(&orbit_loop);
             }
         }
 
