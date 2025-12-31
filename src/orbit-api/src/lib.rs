@@ -1,11 +1,7 @@
 use std::{fmt::Debug, sync::atomic::AtomicBool, time::Duration};
 
 use serde::{Serialize, de::DeserializeOwned};
-use ui::{
-    graphics::{Engine, TargetId},
-    sctk::SctkEvent,
-    widget::Element,
-};
+use ui::{sctk::SctkEvent, widget::Element};
 
 #[allow(unused_imports)]
 pub use self::macros::*;
@@ -68,7 +64,7 @@ pub trait OrbitModule: Default + 'static {
     type Config: Serialize + DeserializeOwned + Default;
     type Message: Send + Clone + 'static;
 
-    fn cleanup<'a>(&mut self, _engine: &mut Engine<'a, ErasedMsg>);
+    fn cleanup<'a>(&mut self, _engine: &mut ui::graphics::Engine<'a, ErasedMsg>);
 
     // Config
     fn init_config(config: &mut serde_yml::Value) {
@@ -82,7 +78,7 @@ pub trait OrbitModule: Default + 'static {
     }
     fn apply_config<'a>(
         &mut self,
-        _engine: &mut Engine<'a, ErasedMsg>,
+        _engine: &mut ui::graphics::Engine<'a, ErasedMsg>,
         _config: Self::Config,
         _options: &mut ui::sctk::Options,
     ) -> bool {
@@ -92,14 +88,14 @@ pub trait OrbitModule: Default + 'static {
     // UI
     fn update<'a>(
         &mut self,
-        _tid: TargetId,
-        _engine: &mut Engine<'a, ErasedMsg>,
+        _tid: ui::graphics::TargetId,
+        _engine: &mut ui::graphics::Engine<'a, ErasedMsg>,
         _event: &Event<Self::Message>,
         _orbit: &OrbitCtl,
     ) -> bool {
         false
     }
-    fn view(&self, _tid: &TargetId) -> Element<Self::Message>;
+    fn view(&self, _tid: &ui::graphics::TargetId) -> Element<Self::Message>;
 
     fn subscriptions(&self) -> Subscription<Self::Message> {
         Subscription::None

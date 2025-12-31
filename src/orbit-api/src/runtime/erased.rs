@@ -43,7 +43,7 @@ impl ErasedMsg {
     }
 }
 
-fn clone_ui_state_to<M2, N2>(from: &mut ui_ctx::Context<N2>) -> ui_ctx::Context<M2> {
+fn set_ui_state_to<M2, N2>(from: &mut ui_ctx::Context<N2>) -> ui_ctx::Context<M2> {
     let mut tmp = ui_ctx::Context::<M2>::new();
     tmp.mouse_pos = from.mouse_pos;
     tmp.mouse_buttons_down = from.mouse_buttons_down;
@@ -56,7 +56,7 @@ fn clone_ui_state_to<M2, N2>(from: &mut ui_ctx::Context<N2>) -> ui_ctx::Context<
     tmp
 }
 
-fn copy_ui_state_back<M2, N2>(to: &mut ui_ctx::Context<N2>, mut from: ui_ctx::Context<M2>) {
+fn set_ui_state_back<M2, N2>(to: &mut ui_ctx::Context<N2>, mut from: ui_ctx::Context<M2>) {
     to.mouse_pos = from.mouse_pos;
     to.mouse_buttons_down = from.mouse_buttons_down;
     to.mouse_buttons_pressed = from.mouse_buttons_pressed;
@@ -141,9 +141,8 @@ where
     N: 'static,
     F: Fn(M) -> N + 'static,
 {
-    /* ----- layout ----- */
     fn layout<'a>(&mut self, ctx: &mut ui_ctx::LayoutCtx<'a, N>) -> Node {
-        let mut tmp_ui = clone_ui_state_to::<M, N>(ctx.ui);
+        let mut tmp_ui = set_ui_state_to::<M, N>(ctx.ui);
         let mut m_ctx = ui_ctx::LayoutCtx {
             globals: ctx.globals,
             ui: &mut tmp_ui,
@@ -152,7 +151,7 @@ where
 
         let out = self.with_target(|w| w.layout(&mut m_ctx));
 
-        copy_ui_state_back(ctx.ui, tmp_ui);
+        set_ui_state_back(ctx.ui, tmp_ui);
         out
     }
 
@@ -183,18 +182,17 @@ where
         ctx: &mut ui_ctx::LayoutCtx<'a, N>,
         width: i32,
     ) -> Option<i32> {
-        let mut tmp_ui = clone_ui_state_to::<M, N>(ctx.ui);
+        let mut tmp_ui = set_ui_state_to::<M, N>(ctx.ui);
         let mut m_ctx = ui_ctx::LayoutCtx {
             globals: ctx.globals,
             ui: &mut tmp_ui,
             text: ctx.text,
         };
         let r = self.with_target(|w| w.min_height_for_width(&mut m_ctx, width));
-        copy_ui_state_back(ctx.ui, tmp_ui);
+        set_ui_state_back(ctx.ui, tmp_ui);
         r
     }
 
-    /* ----- paint ----- */
     fn children_offset(
         &self,
         view_state: &mut std::collections::HashMap<ui_ctx::Id, Box<dyn Any>>,
@@ -210,9 +208,8 @@ where
         self.with_target(|w| w.paint_overlay(ctx, instancess));
     }
 
-    /* ----- interaction ----- */
     fn handle(&mut self, ctx: &mut ui_ctx::EventCtx<N>) {
-        let mut tmp_ui = clone_ui_state_to::<M, N>(ctx.ui);
+        let mut tmp_ui = set_ui_state_to::<M, N>(ctx.ui);
         let mut m_ctx = ui_ctx::EventCtx {
             event: ctx.event,
             globals: ctx.globals,
@@ -226,6 +223,6 @@ where
             ctx.ui.emit((self.f)(m));
         }
 
-        copy_ui_state_back(ctx.ui, tmp_ui);
+        set_ui_state_back(ctx.ui, tmp_ui);
     }
 }
