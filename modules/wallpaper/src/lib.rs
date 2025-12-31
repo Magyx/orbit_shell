@@ -14,7 +14,7 @@ use orbit_api::{
         model::Size,
         render::texture::TextureHandle,
         sctk::{Anchor, KeyboardInteractivity, Layer, LayerOptions, Options, OutputSet},
-        widget::{Element, Image, Length, Overlay, Rectangle, Text},
+        widget::{ContentFit, Element, Image, Length, Overlay, Rectangle, Text},
     },
 };
 
@@ -235,8 +235,10 @@ impl OrbitModule for Wallpaper {
             return Rectangle::placeholder().into();
         };
 
-        let mut view =
-            Overlay::new(el![Image::new(Size::splat(Grow), target.tex)]).size(Size::splat(Grow));
+        let mut view = Overlay::new(el![
+            Image::new(Size::splat(Grow), target.tex).fit(ContentFit::Cover)
+        ])
+        .size(Size::splat(Grow));
 
         for w in self.cfg.widgets.iter() {
             match w {
@@ -298,7 +300,7 @@ orbit_plugin! {
             anchors: Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT,
             exclusive_zone: -1,
             keyboard_interactivity: KeyboardInteractivity::OnDemand,
-            namespace: Some("wallpaper".to_string()),
+            namespace: Some("orbit-wallpaper".to_string()),
             output: Some(OutputSet::All),
         }),
     },
