@@ -10,7 +10,6 @@ pub mod runtime;
 
 mod macros;
 
-// TODO: need to add a way for the modules to signal they want to be closed/toggled to off
 #[derive(Debug)]
 pub struct OrbitCtl {
     exit_orbit: AtomicBool,
@@ -34,13 +33,18 @@ impl OrbitCtl {
     pub fn orbit_should_close(&self) -> bool {
         self.exit_orbit.load(std::sync::atomic::Ordering::Relaxed)
     }
+    pub fn module_should_close(&self) -> bool {
+        self.exit_module
+            .swap(false, std::sync::atomic::Ordering::Relaxed)
+    }
+
     pub fn close_orbit(&self) {
         self.exit_orbit
             .store(true, std::sync::atomic::Ordering::Relaxed);
     }
-    pub fn close_module(&self) -> bool {
+    pub fn close_module(&self) {
         self.exit_module
-            .swap(false, std::sync::atomic::Ordering::Relaxed)
+            .store(true, std::sync::atomic::Ordering::Relaxed)
     }
 }
 
