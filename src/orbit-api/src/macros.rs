@@ -6,6 +6,23 @@ macro_rules! orbit_plugin {
         module = $ty:ty,
         manifest = {
             name: $name:expr,
+            options: $options:expr,
+        },
+    ) => {
+        orbit_plugin!(@impl
+            module = $ty,
+            name = $name,
+            commands = [],
+            options = $options,
+            show_on_startup = true,
+            pipelines = vec![]
+        );
+    };
+
+    (
+        module = $ty:ty,
+        manifest = {
+            name: $name:expr,
             commands: [$($cmd:expr),* $(,)?],
             options: $options:expr,
         },
@@ -36,6 +53,43 @@ macro_rules! orbit_plugin {
             options = $options,
             show_on_startup = true,
             pipelines = $pipelines
+        );
+    };
+
+    (
+        module = $ty:ty,
+        manifest = {
+            name: $name:expr,
+            options: $options:expr,
+            show_on_startup: $show:expr,
+        },
+        pipelines = $pipelines:expr,
+    ) => {
+        orbit_plugin!(@impl
+            module = $ty,
+            name = $name,
+            commands = [],
+            options = $options,
+            show_on_startup = $show,
+            pipelines = $pipelines
+        );
+    };
+
+    (
+        module = $ty:ty,
+        manifest = {
+            name: $name:expr,
+            options: $options:expr,
+            show_on_startup: $show:expr,
+        },
+    ) => {
+        orbit_plugin!(@impl
+            module = $ty,
+            name = $name,
+            commands = [],
+            options = $options,
+            show_on_startup = $show,
+            pipelines = vec![]
         );
     };
 
@@ -86,6 +140,8 @@ macro_rules! orbit_plugin {
         show_on_startup = $show:expr,
         pipelines = $pipelines:expr
     ) => {
+        use orbit_api::{ErasedMsg as __ErasedMsg, Event as __Event, ui::{graphics::{Engine as __Engine, TargetId as __TargetId}, render::pipeline::Pipeline as __Pipeline}};
+
         struct __Wrapper {
             manifest: $crate::runtime::Manifest,
             pipelines: ::std::vec::Vec<(&'static str, $crate::ui::render::PipelineFactoryFn)>,
@@ -110,7 +166,7 @@ macro_rules! orbit_plugin {
         impl $crate::runtime::OrbitModuleDyn for __Wrapper {
             fn manifest(&self) -> &$crate::runtime::Manifest { &self.manifest }
 
-            fn cleanup<'a>(&mut self, engine: &mut Engine<'a, ErasedMsg>) {
+            fn cleanup<'a>(&mut self, engine: &mut __Engine<'a, __ErasedMsg>) {
                 < $ty as $crate::OrbitModule >::cleanup(self.inner_mut(), engine);
             }
 
@@ -122,7 +178,7 @@ macro_rules! orbit_plugin {
             }
             fn apply_config<'a>(
                 &mut self,
-                engine: &mut Engine<'a, ErasedMsg>,
+                engine: &mut __Engine<'a, __ErasedMsg>,
                 config: &serde_yml::Value,
                 options: &mut $crate::ui::sctk::Options,
             ) -> bool {
@@ -136,9 +192,9 @@ macro_rules! orbit_plugin {
             }
             fn update<'a>(
                 &mut self,
-                tid: TargetId,
-                engine: &mut Engine<'a, ErasedMsg>,
-                event: &Event<ErasedMsg>,
+                tid: __TargetId,
+                engine: &mut __Engine<'a, __ErasedMsg>,
+                event: &__Event<__ErasedMsg>,
                 orbit: &$crate::OrbitCtl,
             ) -> bool {
                 type __Msg = < $ty as $crate::OrbitModule >::Message;
