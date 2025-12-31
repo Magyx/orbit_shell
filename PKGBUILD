@@ -1,5 +1,5 @@
 pkgbase=orbitshell-git
-pkgname=('orbitd-git' 'orbitctl-git' 'orbit-module-wallpaper-git' 'orbit-module-bar-git')
+pkgname=('orbit-git' 'orbit-module-wallpaper-git' 'orbit-module-bar-git')
 pkgver=0.1.0
 pkgrel=0.1
 pkgdesc='Orbit shell daemon and CLI'
@@ -42,19 +42,10 @@ build() {
   cargo build --workspace --release
 }
 
-package_orbitd-git() {
+package_orbit-git() {
   cd "$srcdir/orbitshell"
 
   install -Dm755 "target/release/orbitd" "$pkgdir/usr/bin/orbitd"
-
-  if [[ -f LICENSE ]]; then
-    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
-  fi
-}
-
-package_orbitctl-git() {
-  cd "$srcdir/orbitshell"
-
   install -Dm755 "target/release/orbit" "$pkgdir/usr/bin/orbit"
 
   if [[ -f LICENSE ]]; then
