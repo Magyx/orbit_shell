@@ -29,6 +29,7 @@ impl OrbitdServer {
 
     pub fn start(&mut self) {
         assert!(self.handle.is_none(), "orbitd dbus server already started");
+        tracing::info!("starting dbus server");
 
         let (stop_tx, stop_rx) = mpsc::channel();
         self.stop_tx = Some(stop_tx);
@@ -51,7 +52,7 @@ impl OrbitdServer {
             };
 
             if let Err(e) = futures_lite::future::block_on(run) {
-                eprintln!("zbus server failed: {e}");
+                tracing::error!(error = %e, "zbus server failed");
             }
         });
 
@@ -88,6 +89,7 @@ impl OrbitIface {
 impl OrbitIface {
     fn alive(&self) {}
     fn reload(&self) -> String {
+        tracing::info!("dbus: reload");
         let (resp_tx, resp_rx) = mpsc::channel::<String>();
         let _ = self.tx.send(DbusEvent::Reload(resp_tx));
 
@@ -96,6 +98,7 @@ impl OrbitIface {
             .unwrap_or("timeout or no response".into())
     }
     fn modules(&self) -> String {
+        tracing::info!("dbus: modules");
         let (resp_tx, resp_rx) = mpsc::channel::<String>();
         let _ = self.tx.send(DbusEvent::Modules(resp_tx));
 
@@ -104,9 +107,11 @@ impl OrbitIface {
             .unwrap_or("timeout or no response".into())
     }
     fn toggle(&self, module: &str) {
+        tracing::info!(module = %module, "dbus: toggle");
         let _ = self.tx.send(DbusEvent::Toggle(module.to_string()));
     }
     fn exit(&self) {
+        tracing::warn!("dbus: exit requested");
         let _ = self.tx.send(DbusEvent::Exit);
     }
 }

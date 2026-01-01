@@ -39,6 +39,7 @@ mod dialog;
 mod event;
 mod module;
 mod sctk;
+mod trace;
 
 struct ConfigInstruction {
     should_unrealize: bool,
@@ -842,13 +843,12 @@ impl<'a> Orbit<'a> {
                             }
                         }
                         ConfigEvent::Err(errors) => {
-                            dbg!(&errors);
+                            tracing::warn!(?errors, "config errors");
                             self.show_error(errors);
                         }
                     },
                 }
             }
-
             if need_tick {
                 self.tick_all_targets(&orbit_loop);
             }
@@ -862,6 +862,11 @@ impl<'a> Orbit<'a> {
 pub fn main() {
     // TODO: get config_path from args
 
+    trace::init();
+    tracing::info!("orbitd starting");
+
     let mut orbit = Orbit::new(None).expect("woops");
     orbit.run();
+
+    tracing::info!("orbitd stopped");
 }

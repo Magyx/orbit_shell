@@ -38,6 +38,7 @@ impl ConfigWatcher {
             self.handle.is_none(),
             "orbitd config watcher already started"
         );
+        tracing::debug!(base = %base.display(), "starting config watcher");
 
         let (stop_tx, stop_rx) = mpsc::channel();
         self.stop_tx = Some(stop_tx);
@@ -55,9 +56,17 @@ impl ConfigWatcher {
             };
 
             let (n_tx, n_rx) = std::sync::mpsc::channel();
-            let mut watcher = RecommendedWatcher::new(n_tx, NConfig::default()).unwrap();
-
-            watcher.watch(&base, RecursiveMode::NonRecursive).unwrap();
+            let mut watcher = match RecommendedWatcher::new(n_tx, NConfig::default()) {
+                Ok(w) => w,
+                Err(e) => {
+                    tracing::error!(error = ?e, "failed to create notify watcher");
+                    return;
+                }
+            };
+            if let Err(e) = watcher.watch(&base, RecursiveMode::NonRecursive) {
+                tracing::error!(error = ?e, "failed to watch config dir");
+                return;
+            };
 
             let mut last = Instant::now() - Duration::from_millis(500);
             let debounce = Duration::from_millis(150);
@@ -88,6 +97,7 @@ impl ConfigWatcher {
                         );
 
                         if reloadish && last.elapsed() >= debounce {
+                            tracing::info!("config changed, reloading");
                             let event = match load_cfg(&base) {
                                 Ok(v) => ConfigEvent::Reload(v),
                                 Err(e) => ConfigEvent::Err(vec![e.into()]),
