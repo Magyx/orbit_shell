@@ -4,9 +4,12 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-ui = { git = "https://github.com/Magyx/ui_lib.git", features = ["sctk"] }
+ui = { git = "https://github.com/Magyx/ui_lib.git", rev = "6648312", features = [
+  "sctk",
+] }
 serde = "1.0.228"
 serde_yml = "0.0.12"
 calloop = "0.14.3"
+tracing = "0.1.44"
 
 [features]
