@@ -20,7 +20,6 @@ pub trait OrbitModuleDyn: 'static {
     fn manifest(&self) -> &Manifest;
     fn cleanup<'a>(&mut self, engine: &mut Engine<'a, ErasedMsg>);
 
-    fn init_config(&self, cfg: &mut serde_yml::Value);
     fn validate_config(&self, cfg: &serde_yml::Value) -> Result<(), String>;
     fn apply_config<'a>(
         &mut self,

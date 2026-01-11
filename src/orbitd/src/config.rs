@@ -7,6 +7,7 @@ use std::{
 };
 
 use calloop::channel as loop_channel;
+use serde_yml::{Mapping, Value};
 
 #[derive(Debug)]
 pub enum ConfigEvent {
@@ -33,6 +34,7 @@ impl ConfigWatcher {
         )
     }
 
+    // TODO: need to watch potential location.
     pub fn start(&mut self, base: &Path) {
         assert!(
             self.handle.is_none(),
@@ -132,16 +134,6 @@ impl Drop for ConfigWatcher {
     }
 }
 
-pub fn ensure_exists(base: &PathBuf) -> Result<(), &'static str> {
-    fs::create_dir_all(base).map_err(|_| "failed to create config dir")?;
-
-    let config = cfg_path(base);
-    if !config.exists() {
-        fs::write(&config, "modules: {}\n").map_err(|_| "failed to init config.yaml")?;
-    }
-    Ok(())
-}
-
 pub fn xdg_config_home() -> PathBuf {
     let base = xdg::BaseDirectories::new().config_home.unwrap_or_default();
     base.join("orbit")
@@ -167,12 +159,7 @@ pub fn load_cfg(base: &Path) -> Result<serde_yml::Value, &'static str> {
                 std::thread::sleep(Duration::from_millis(50));
                 continue;
             }
-            Err(_) => return Err("failed to read config.yaml"),
+            Err(_) => return Ok(Value::Mapping(Mapping::new())),
         }
     }
-}
-
-pub fn store_to_cfg(base: &Path, cfg: &serde_yml::Value) -> Result<(), &'static str> {
-    let s = serde_yml::to_string(cfg).map_err(|_| "failed to serialize config.yaml")?;
-    fs::write(cfg_path(base), s).map_err(|_| "failed to write config.yaml")
 }

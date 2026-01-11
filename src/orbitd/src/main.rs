@@ -95,7 +95,6 @@ struct Orbit<'a> {
 impl<'a> Orbit<'a> {
     fn new(config_path: Option<PathBuf>) -> Result<Self, String> {
         let config_path = config_path.unwrap_or_else(config::xdg_config_home);
-        config::ensure_exists(&config_path)?;
 
         let (sctk_rx, sctk) = SctkApp::new()?;
         let mut engine = Engine::default();
@@ -131,29 +130,19 @@ impl<'a> Orbit<'a> {
         })
     }
 
-    fn is_enabled(map: &mut serde_yml::Mapping, name: &serde_yml::Value) -> Result<bool, String> {
-        if !map.contains_key("modules") {
-            map.insert(
-                Value::String("modules".into()),
-                Value::Mapping(Mapping::new()),
-            );
-        }
-        let modules_val = map.get_mut("modules").expect("mapping just created");
-        let Some(modules_map) = modules_val.as_mapping_mut() else {
+    fn is_enabled(map: &serde_yml::Mapping, name: &str) -> Result<bool, String> {
+        let Some(modules_val) = map.get("modules") else {
             return Ok(false);
         };
-
-        if !modules_map.contains_key(name) {
-            modules_map.insert(name.clone(), Value::Bool(false));
-            Ok(false)
-        } else {
-            modules_map
-                .get(name)
-                .and_then(Value::as_bool)
-                .ok_or_else(|| {
-                    format!("Module value for {} is not a bool!", name.as_str().unwrap())
-                })
-        }
+        let Some(modules_map) = modules_val.as_mapping() else {
+            return Ok(false);
+        };
+        let Some(module) = modules_map.get(name) else {
+            return Ok(false);
+        };
+        module
+            .as_bool()
+            .ok_or_else(|| format!("Module value for {} is not a bool!", name))
     }
 
     fn discover_and_load_modules(
@@ -163,11 +152,12 @@ impl<'a> Orbit<'a> {
         prev_module_len: Option<usize>,
     ) -> Result<HashMap<ModuleId, ModuleInfo>, String> {
         match Self::discover_modules(config_path, prev_module_len) {
-            Ok(modules) => Self::load_modules(modules, cfg, config_path, engine),
+            Ok(modules) => Self::load_modules(modules, cfg, engine),
             Err(e) => Err(e),
         }
     }
 
+    // TODO: Module::new already reads the library code even if not enabled
     fn discover_modules(
         config_path: &Path,
         prev_module_len: Option<usize>,
@@ -206,11 +196,8 @@ impl<'a> Orbit<'a> {
     fn load_modules(
         modules: Vec<ModuleInfo>,
         cfg: &mut serde_yml::Value,
-        config_path: &Path,
         engine: &mut Engine<'a, ErasedMsg>,
     ) -> Result<HashMap<ModuleId, ModuleInfo>, String> {
-        let prev_cfg = cfg.clone();
-
         if cfg.get("modules").is_none() {
             cfg["modules"] = Value::Mapping(Mapping::new());
         }
@@ -222,7 +209,7 @@ impl<'a> Orbit<'a> {
             let name = module.as_ref().manifest().name;
             let name_val = Value::from(name);
 
-            let enabled = Self::is_enabled(map, &name_val)?;
+            let enabled = Self::is_enabled(map, name)?;
             if enabled {
                 Self::load_module(engine, map, &module, &name_val)?;
             } else {
@@ -232,10 +219,6 @@ impl<'a> Orbit<'a> {
             let id = ModuleId(next_id);
             next_id = next_id.wrapping_add(1);
             loaded_modules.insert(id, module);
-        }
-
-        if prev_cfg != *cfg {
-            config::store_to_cfg(config_path, cfg).map_err(|e| e.to_string())?;
         }
 
         Ok(loaded_modules)
@@ -252,7 +235,6 @@ impl<'a> Orbit<'a> {
         }
         let cfg_for_module = map.get_mut(name.clone()).expect("inserted above");
 
-        module.as_ref().init_config(cfg_for_module);
         module.as_ref().validate_config(cfg_for_module)?;
 
         for (key, factory) in module.as_ref().pipelines() {
@@ -270,7 +252,7 @@ impl<'a> Orbit<'a> {
             m.iter()
                 .map(|(k, v)| {
                     let key = k.as_str().ok_or("Key is not a string")?.to_owned();
-                    let val = v.as_bool().ok_or("Value of module is not a bool!")?;
+                    let val = v.as_bool().ok_or("Value of module is not a bool")?;
                     Ok((key, val))
                 })
                 .collect::<Result<HashMap<_, _>, _>>()
@@ -281,14 +263,12 @@ impl<'a> Orbit<'a> {
             _ => return Err("Config could not be parsed!"),
         };
 
-        let old_modules_map = old_root
-            .get("modules")
-            .and_then(Value::as_mapping)
-            .ok_or("Missing modules in config!")?;
-        let new_modules_map = new_root
-            .get("modules")
-            .and_then(Value::as_mapping)
-            .ok_or("Missing modules in config!")?;
+        let Some(old_modules_map) = old_root.get("modules").and_then(Value::as_mapping) else {
+            return Ok(HashMap::new());
+        };
+        let Some(new_modules_map) = new_root.get("modules").and_then(Value::as_mapping) else {
+            return Ok(HashMap::new());
+        };
 
         let old_modules = to_bool_map(old_modules_map)?;
         let new_modules = to_bool_map(new_modules_map)?;
@@ -759,7 +739,11 @@ impl<'a> Orbit<'a> {
                                     self.unrealize_module(&mut event_loop.handle(), mid);
                                 }
 
-                                if should_realize || config_changed {
+                                if (should_realize || config_changed)
+                                    && new_config.is_mapping()
+                                    && Self::is_enabled(new_config.as_mapping().unwrap(), &name)
+                                        .unwrap_or(false)
+                                {
                                     let module_name = module.as_ref().manifest().name;
                                     let new_config_map = new_config
                                         .as_mapping_mut()
@@ -830,15 +814,9 @@ impl<'a> Orbit<'a> {
                             self.modules = modules;
 
                             if errors.is_empty() {
-                                if let Err(e) = config::store_to_cfg(&self.config_path, &new_config)
-                                {
-                                    errors.push(e.into());
-                                } else {
-                                    self.config = new_config;
-                                    self.hide_error();
-                                }
-                            }
-                            if !errors.is_empty() {
+                                self.config = new_config;
+                                self.hide_error();
+                            } else if !errors.is_empty() {
                                 let _ = tx.send(Event::Config(ConfigEvent::Err(errors)));
                             }
                         }

@@ -161,6 +161,34 @@ macro_rules! orbit_plugin {
             fn inner_ref(&self) -> &$ty {
                 self.inner.get_or_init(<$ty as ::std::default::Default>::default)
             }
+
+            fn merged_config_value(raw: &serde_yml::Value) -> serde_yml::Value {
+                use serde_yml::Value;
+
+                fn merge(base: Value, overlay: &Value) -> Value {
+                    match (base, overlay) {
+                        (Value::Mapping(mut b), Value::Mapping(o)) => {
+                            for (k, ov) in o {
+                                match b.remove(k) {
+                                    Some(bv) => { b.insert(k.clone(), merge(bv, ov)); }
+                                    None => { b.insert(k.clone(), ov.clone()); }
+                                }
+                            }
+                            Value::Mapping(b)
+                        }
+                        // Treat `null` as "leave default"
+                        (b, Value::Null) => b,
+                        // Scalars/sequences: overlay wins
+                        (_, o) => o.clone(),
+                    }
+                }
+
+                let defaults = serde_yml::to_value(
+                    <<$ty as $crate::OrbitModule>::Config as ::std::default::Default>::default()
+                ).expect("serialize default config");
+
+                merge(defaults, raw)
+            }
         }
 
         impl $crate::runtime::OrbitModuleDyn for __Wrapper {
@@ -170,11 +198,9 @@ macro_rules! orbit_plugin {
                 < $ty as $crate::OrbitModule >::cleanup(self.inner_mut(), engine);
             }
 
-            fn init_config(&self, cfg: &mut serde_yml::Value) {
-                < $ty as $crate::OrbitModule >::init_config(cfg)
-            }
             fn validate_config(&self, cfg: &serde_yml::Value) -> Result<(), String> {
-                < $ty as $crate::OrbitModule >::validate_config(cfg)
+                let merged = Self::merged_config_value(cfg);
+                < $ty as $crate::OrbitModule >::validate_config(&merged)
             }
             fn apply_config<'a>(
                 &mut self,
@@ -182,8 +208,19 @@ macro_rules! orbit_plugin {
                 config: &serde_yml::Value,
                 options: &mut $crate::ui::sctk::Options,
             ) -> bool {
+                let merged = Self::merged_config_value(config);
+
                 let parsed: < $ty as $crate::OrbitModule >::Config =
-                    serde_yml::from_value(config.clone()).unwrap_or_default();
+                    match serde_yml::from_value(merged) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            $crate::tracing::warn!(
+                                module = %self.manifest.name,
+                                "config parse failed: {e}"
+                            );
+                            return false;
+                        }
+                    };
                 < $ty as $crate::OrbitModule >::apply_config(self.inner_mut(), engine, parsed, options)
             }
 

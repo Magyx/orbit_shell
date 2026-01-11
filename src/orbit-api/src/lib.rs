@@ -3,6 +3,8 @@ use std::{fmt::Debug, sync::atomic::AtomicBool, time::Duration};
 use serde::{Serialize, de::DeserializeOwned};
 use ui::{sctk::SctkEvent, widget::Element};
 
+pub use tracing;
+
 #[allow(unused_imports)]
 pub use self::macros::*;
 pub use ui;
@@ -71,10 +73,6 @@ pub trait OrbitModule: Default + 'static {
     fn cleanup<'a>(&mut self, _engine: &mut ui::graphics::Engine<'a, ErasedMsg>);
 
     // Config
-    fn init_config(config: &mut serde_yml::Value) {
-        let merged: Self::Config = serde_yml::from_value(config.clone()).unwrap_or_default();
-        *config = serde_yml::to_value(merged).expect("serialize merged config");
-    }
     fn validate_config(config: &serde_yml::Value) -> Result<(), String> {
         serde_yml::from_value::<Self::Config>(config.clone())
             .map(|_: Self::Config| ())
