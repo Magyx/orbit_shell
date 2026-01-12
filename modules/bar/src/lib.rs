@@ -55,21 +55,12 @@ impl OrbitModule for Bar {
 
     fn cleanup<'a>(&mut self, _engine: &mut Engine<'a>) {}
 
-    fn validate_config(config: &serde_yml::Value) -> Result<(), String> {
-        #[derive(Deserialize)]
-        struct HeightOnly {
-            height: Option<u32>,
+    fn validate_config(cfg: Self::Config) -> Result<(), String> {
+        if cfg.height < 1 {
+            Err("Height must be at least 1".into())
+        } else {
+            Ok(())
         }
-
-        let parsed: HeightOnly =
-            serde_yml::from_value(config.clone()).map_err(|e| format!("invalid config: {e}"))?;
-
-        if let Some(h) = parsed.height
-            && h < 1
-        {
-            return Err("Height must be at least 1".into());
-        }
-        Ok(())
     }
 
     fn apply_config<'a>(

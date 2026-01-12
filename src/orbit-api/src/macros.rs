@@ -198,9 +198,15 @@ macro_rules! orbit_plugin {
                 < $ty as $crate::OrbitModule >::cleanup(self.inner_mut(), engine);
             }
 
+            fn validate_config_raw(&self, cfg: &serde_yml::Value) -> Result<(), String> {
+                < $ty as $crate::OrbitModule >::validate_config_raw(cfg)
+            }
             fn validate_config(&self, cfg: &serde_yml::Value) -> Result<(), String> {
                 let merged = Self::merged_config_value(cfg);
-                < $ty as $crate::OrbitModule >::validate_config(&merged)
+
+                let parsed: < $ty as $crate::OrbitModule >::Config =
+                    serde_yml::from_value(merged).map_err(|e| format!("config parse failed: {e}"))?;
+                < $ty as $crate::OrbitModule >::validate_config(parsed)
             }
             fn apply_config<'a>(
                 &mut self,

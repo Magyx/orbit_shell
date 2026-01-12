@@ -75,31 +75,41 @@ pub trait OrbitModule: Default + 'static {
     fn cleanup<'a>(&mut self, _engine: &mut Engine<'a>);
 
     // Config
-    fn validate_config(config: &serde_yml::Value) -> Result<(), String> {
-        serde_yml::from_value::<Self::Config>(config.clone())
-            .map(|_: Self::Config| ())
-            .map_err(|e| e.to_string())
+    fn validate_config_raw(cfg: &serde_yml::Value) -> Result<(), String> {
+        _ = cfg;
+        Ok(())
+    }
+    fn validate_config(cfg: Self::Config) -> Result<(), String> {
+        _ = cfg;
+        Ok(())
     }
     fn apply_config<'a>(
         &mut self,
-        _engine: &mut Engine<'a>,
-        _config: Self::Config,
-        _options: &mut ui::sctk::Options,
+        engine: &mut Engine<'a>,
+        config: Self::Config,
+        options: &mut ui::sctk::Options,
     ) -> bool {
+        _ = engine;
+        _ = config;
+        _ = options;
         false
     }
 
     // UI
     fn update<'a>(
         &mut self,
-        _tid: ui::graphics::TargetId,
-        _engine: &mut Engine<'a>,
-        _event: &Event<Self::Message>,
-        _orbit: &OrbitCtl,
+        tid: ui::graphics::TargetId,
+        engine: &mut Engine<'a>,
+        event: &Event<Self::Message>,
+        orbit: &OrbitCtl,
     ) -> bool {
+        _ = tid;
+        _ = engine;
+        _ = event;
+        _ = orbit;
         false
     }
-    fn view(&self, _tid: &ui::graphics::TargetId) -> Element<Self::Message>;
+    fn view(&self, tid: &ui::graphics::TargetId) -> Element<Self::Message>;
 
     fn subscriptions(&self) -> Subscription<Self::Message> {
         Subscription::None
