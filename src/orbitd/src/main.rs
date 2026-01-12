@@ -48,25 +48,47 @@ struct ConfigInstruction {
 }
 
 struct ModuleInfo {
-    inner: Module,
+    name: String,
+    path: PathBuf,
+    inner: Option<Module>,
     toggled: bool,
 }
 
 impl ModuleInfo {
-    pub fn new(module: Module) -> Self {
-        let toggled = module.as_ref().manifest().show_on_startup;
+    pub fn new(name: String, path: PathBuf) -> Self {
         Self {
-            inner: module,
-            toggled,
+            name,
+            path,
+            inner: None,
+            toggled: false,
         }
     }
 
+    pub fn is_loaded(&self) -> bool {
+        self.inner.is_some()
+    }
+
+    pub fn ensure_loaded(&mut self) -> Result<(), String> {
+        if self.inner.is_none() {
+            self.inner = Some(Module::new(&self.path)?);
+        }
+
+        Ok(())
+    }
+
+    pub fn unload(&mut self, engine: &mut Engine<'_, ErasedMsg>) {
+        if let Some(mut module) = self.inner.take() {
+            module.as_mut().cleanup(engine);
+        }
+        self.toggled = false;
+    }
+
     pub fn as_ref(&self) -> &dyn OrbitModuleDyn {
-        self.inner.as_ref()
+        self.inner.as_ref().expect("module not loaded").as_ref()
     }
 
     pub fn as_mut(&mut self) -> &mut dyn OrbitModuleDyn {
-        self.inner.as_mut()
+        self.inner.as_mut().expect("module not loaded").as_mut()
     }
 }
 
@@ -130,7 +152,10 @@ impl<'a> Orbit<'a> {
         })
     }
 
-    fn is_enabled(map: &serde_yml::Mapping, name: &str) -> Result<bool, String> {
+    fn is_enabled(map: Option<&serde_yml::Mapping>, name: &str) -> Result<bool, String> {
+        let Some(map) = map else {
+            return Ok(false);
+        };
         let Some(modules_val) = map.get("modules") else {
             return Ok(false);
         };
@@ -157,7 +182,6 @@ impl<'a> Orbit<'a> {
         }
     }
 
-    // TODO: Module::new already reads the library code even if not enabled
     fn discover_modules(
         config_path: &Path,
         prev_module_len: Option<usize>,
@@ -174,7 +198,7 @@ impl<'a> Orbit<'a> {
                     if path.extension().map(|e| e == "so").unwrap_or(false)
                         && let Some(name) = path.file_name().and_then(|n| n.to_str())
                     {
-                        map.insert(name.to_string(), path);
+                        map.insert(name.split('.').next().unwrap().to_string(), path);
                     }
                 }
             }
@@ -186,9 +210,12 @@ impl<'a> Orbit<'a> {
             let _ = push_dir(&mut by_name, user_dir);
         }
 
+        let mut items: Vec<(String, PathBuf)> = by_name.into_iter().collect();
+        items.sort_by(|(a, _), (b, _)| a.cmp(b));
+
         let mut modules = Vec::with_capacity(prev_module_len.unwrap_or_default());
-        for path in by_name.values() {
-            modules.push(ModuleInfo::new(Module::new(path)?));
+        for (name, path) in items {
+            modules.push(ModuleInfo::new(name, path));
         }
         Ok(modules)
     }
@@ -198,22 +225,16 @@ impl<'a> Orbit<'a> {
         cfg: &mut serde_yml::Value,
         engine: &mut Engine<'a, ErasedMsg>,
     ) -> Result<HashMap<ModuleId, ModuleInfo>, String> {
-        if cfg.get("modules").is_none() {
-            cfg["modules"] = Value::Mapping(Mapping::new());
-        }
-        let map = cfg.as_mapping_mut().expect("just created mapping");
-
         let mut loaded_modules = HashMap::with_capacity(modules.len());
         let mut next_id: u32 = 0;
         for mut module in modules {
-            let name = module.as_ref().manifest().name;
-            let name_val = Value::from(name);
-
-            let enabled = Self::is_enabled(map, name)?;
+            let enabled = Self::is_enabled(cfg.as_mapping(), &module.name)?;
             if enabled {
-                Self::load_module(engine, map, &module, &name_val)?;
+                Self::load_module(engine, cfg.as_mapping_mut().unwrap(), &mut module)?;
+                module.toggled = module.as_ref().manifest().show_on_startup;
             } else {
                 module.toggled = false;
+                module.inner = None;
             }
 
             let id = ModuleId(next_id);
@@ -227,14 +248,13 @@ impl<'a> Orbit<'a> {
     fn load_module(
         engine: &mut Engine<'a, ErasedMsg>,
         map: &mut serde_yml::Mapping,
-        module: &ModuleInfo,
-        name: &serde_yml::Value,
+        module: &mut ModuleInfo,
     ) -> Result<(), String> {
-        if !map.contains_key(name) {
-            map.insert(name.clone(), Value::Mapping(Mapping::new()));
-        }
-        let cfg_for_module = map.get_mut(name.clone()).expect("inserted above");
+        let cfg_for_module = map
+            .entry(Value::String(module.name.clone()))
+            .or_insert_with(|| Value::Mapping(Mapping::new()));
 
+        module.ensure_loaded()?;
         module.as_ref().validate_config(cfg_for_module)?;
 
         for (key, factory) in module.as_ref().pipelines() {
@@ -306,7 +326,7 @@ impl<'a> Orbit<'a> {
         tx: &mpsc::Sender<Event>,
         loop_handle: &mut LoopHandle<SctkState>,
         mid: &ModuleId,
-        module: &ModuleInfo,
+        module: &mut ModuleInfo,
     ) {
         if !module.toggled {
             return;
@@ -411,13 +431,11 @@ impl<'a> Orbit<'a> {
             return;
         }
 
-        let module_name = module.as_ref().manifest().name;
-
         let opts_final = if let Some(o) = opts {
             o
         } else {
             let mut o = module.as_ref().manifest().options.clone();
-            if let Some(cfg) = cfg.get(module_name) {
+            if let Some(cfg) = cfg.get(&module.name) {
                 module.as_mut().apply_config(&mut self.engine, cfg, &mut o);
             }
             o
@@ -614,7 +632,9 @@ impl<'a> Orbit<'a> {
                     Event::Dbus(dbus_event) => match dbus_event {
                         DbusEvent::Reload(resp_tx) => {
                             for module in self.modules.values_mut() {
-                                module.as_mut().cleanup(&mut self.engine);
+                                if module.is_loaded() {
+                                    module.as_mut().cleanup(&mut self.engine);
+                                }
                             }
 
                             let all_sids: Vec<_> = self.by_surface.keys().copied().collect();
@@ -650,12 +670,17 @@ impl<'a> Orbit<'a> {
                             let _ = resp_tx.send(resp);
                         }
                         DbusEvent::Modules(resp_tx) => {
-                            let mut reply = String::with_capacity(128 + self.modules.len() * 24);
+                            let mut reply = String::with_capacity(128 + self.modules.len() * 32);
                             reply.push_str("Loaded modules:\n");
 
                             for (_id, module) in self.modules.iter() {
-                                let name = module.as_ref().manifest().name;
-                                writeln!(reply, "\t{}", name).unwrap();
+                                let loaded = if module.is_loaded() {
+                                    "loaded"
+                                } else {
+                                    "unloaded"
+                                };
+                                let shown = if module.toggled { ", shown" } else { "" };
+                                writeln!(reply, "\t{} ({}{})", module.name, loaded, shown).unwrap();
                             }
 
                             let _ = resp_tx.send(reply);
@@ -664,7 +689,7 @@ impl<'a> Orbit<'a> {
                             let Some(&mid) = self
                                 .modules
                                 .iter()
-                                .find(|(_, m)| m.as_ref().manifest().name == module_name)
+                                .find(|(_, m)| m.name == module_name && m.is_loaded())
                                 .map(|(mid, _)| mid)
                             else {
                                 continue;
@@ -709,10 +734,10 @@ impl<'a> Orbit<'a> {
                                         continue;
                                     }
                                 };
-                            let mid_by_name: HashMap<&_, _> = self
+                            let mid_by_name: HashMap<String, ModuleId> = self
                                 .modules
                                 .iter()
-                                .map(|(&k, v)| (v.as_ref().manifest().name, k))
+                                .map(|(&k, v)| (v.name.clone(), k))
                                 .collect();
                             let mut modules = std::mem::take(&mut self.modules);
                             for (
@@ -734,26 +759,24 @@ impl<'a> Orbit<'a> {
                                     continue;
                                 };
 
+                                let new_enabled = new_config
+                                    .as_mapping()
+                                    .map(|m| Self::is_enabled(Some(m), &name).unwrap_or(false))
+                                    .unwrap_or(false);
+
                                 if should_unrealize {
                                     module.toggled = false;
                                     self.unrealize_module(&mut event_loop.handle(), mid);
+                                    module.unload(&mut self.engine);
                                 }
 
-                                if (should_realize || config_changed)
-                                    && new_config.is_mapping()
-                                    && Self::is_enabled(new_config.as_mapping().unwrap(), &name)
-                                        .unwrap_or(false)
-                                {
-                                    let module_name = module.as_ref().manifest().name;
+                                if (should_realize || config_changed) && new_enabled {
                                     let new_config_map = new_config
                                         .as_mapping_mut()
                                         .expect("should exist from compare_configs");
-                                    if let Err(e) = Self::load_module(
-                                        &mut self.engine,
-                                        new_config_map,
-                                        module,
-                                        &Value::String(module_name.into()),
-                                    ) {
+                                    if let Err(e) =
+                                        Self::load_module(&mut self.engine, new_config_map, module)
+                                    {
                                         errors.push(e);
                                         continue;
                                     }
@@ -772,42 +795,40 @@ impl<'a> Orbit<'a> {
                                     }
                                 }
 
-                                if !should_realize && config_changed {
-                                    let module_name = module.as_ref().manifest().name;
-                                    if let Some(cfg) = new_config.get(module_name) {
-                                        let mut opts = module.as_ref().manifest().options.clone();
-                                        let must_rebuild = module.as_mut().apply_config(
-                                            &mut self.engine,
-                                            cfg,
-                                            &mut opts,
-                                        );
+                                if !should_realize
+                                    && config_changed
+                                    && new_enabled
+                                    && let Some(cfg) = new_config.get(&module.name)
+                                {
+                                    let mut opts = module.as_ref().manifest().options.clone();
+                                    let must_rebuild = module.as_mut().apply_config(
+                                        &mut self.engine,
+                                        cfg,
+                                        &mut opts,
+                                    );
 
-                                        if must_rebuild {
-                                            self.unrealize_module(&mut event_loop.handle(), mid);
-                                            self.realize_module_with_opts(
-                                                &tx,
-                                                &mut event_loop.handle(),
-                                                &new_config,
-                                                mid,
-                                                module,
-                                                opts,
-                                            );
-                                        } else {
-                                            self.remove_subscriptions(
-                                                &mut event_loop.handle(),
-                                                mid,
-                                            );
-                                            self.add_subscriptions(
-                                                &tx,
-                                                &mut event_loop.handle(),
-                                                &mid,
-                                                module,
-                                            );
-                                            let _ = tx.send(Event::Ui(event::Ui::Orbit(
-                                                mid,
-                                                SctkEvent::Redraw,
-                                            )));
-                                        }
+                                    if must_rebuild {
+                                        self.unrealize_module(&mut event_loop.handle(), mid);
+                                        self.realize_module_with_opts(
+                                            &tx,
+                                            &mut event_loop.handle(),
+                                            &new_config,
+                                            mid,
+                                            module,
+                                            opts,
+                                        );
+                                    } else {
+                                        self.remove_subscriptions(&mut event_loop.handle(), mid);
+                                        self.add_subscriptions(
+                                            &tx,
+                                            &mut event_loop.handle(),
+                                            &mid,
+                                            module,
+                                        );
+                                        let _ = tx.send(Event::Ui(event::Ui::Orbit(
+                                            mid,
+                                            SctkEvent::Redraw,
+                                        )));
                                     }
                                 }
                             }
