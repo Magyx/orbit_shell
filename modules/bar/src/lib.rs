@@ -1,10 +1,10 @@
 use std::time::Duration;
 
 use orbit_api::{
-    ErasedMsg, Event, OrbitCtl, OrbitModule, Subscription, orbit_plugin,
+    Engine, Event, OrbitCtl, OrbitModule, Subscription, orbit_plugin,
     ui::{
         el,
-        graphics::{Engine, TargetId},
+        graphics::TargetId,
         model::{Color, Size},
         sctk::{Anchor, KeyboardInteractivity, Layer, LayerOptions, Options, OutputSet},
         widget::{Column, Element, Length, Row, Spacer, Text},
@@ -53,7 +53,7 @@ impl OrbitModule for Bar {
     type Config = Config;
     type Message = Msg;
 
-    fn cleanup<'a>(&mut self, _engine: &mut Engine<'a, ErasedMsg>) {}
+    fn cleanup<'a>(&mut self, _engine: &mut Engine<'a>) {}
 
     fn validate_config(config: &serde_yml::Value) -> Result<(), String> {
         #[derive(Deserialize)]
@@ -74,7 +74,7 @@ impl OrbitModule for Bar {
 
     fn apply_config<'a>(
         &mut self,
-        _engine: &mut Engine<'a, ErasedMsg>,
+        _engine: &mut Engine<'a>,
         config: Self::Config,
         options: &mut orbit_api::ui::sctk::Options,
     ) -> bool {
@@ -95,7 +95,7 @@ impl OrbitModule for Bar {
     fn update<'a>(
         &mut self,
         _tid: TargetId,
-        _engine: &mut Engine<'a, ErasedMsg>,
+        _engine: &mut Engine<'a>,
         event: &Event<Self::Message>,
         _orbit: &OrbitCtl,
     ) -> bool {

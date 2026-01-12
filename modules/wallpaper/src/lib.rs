@@ -7,10 +7,10 @@ use std::{
 };
 
 use orbit_api::{
-    ErasedMsg, Event, OrbitCtl, OrbitModule, Subscription, orbit_plugin,
+    Engine, Event, OrbitCtl, OrbitModule, Subscription, orbit_plugin,
     ui::{
         el,
-        graphics::{Engine, TargetId},
+        graphics::TargetId,
         model::Size,
         render::texture::TextureHandle,
         sctk::{Anchor, KeyboardInteractivity, Layer, LayerOptions, Options, OutputSet},
@@ -105,11 +105,7 @@ impl Wallpaper {
         }
     }
 
-    fn ensure_texture_loaded<'a>(
-        &mut self,
-        tid: &TargetId,
-        engine: &mut Engine<'a, ErasedMsg>,
-    ) -> bool {
+    fn ensure_texture_loaded<'a>(&mut self, tid: &TargetId, engine: &mut Engine<'a>) -> bool {
         if self.targets.contains_key(tid) || !self.cfg.source.exists() {
             return false;
         }
@@ -170,7 +166,7 @@ impl OrbitModule for Wallpaper {
     type Config = Config;
     type Message = Msg;
 
-    fn cleanup<'a>(&mut self, engine: &mut Engine<'a, ErasedMsg>) {
+    fn cleanup<'a>(&mut self, engine: &mut Engine<'a>) {
         for (_, target) in self.targets.drain() {
             engine.unload_texture(target.tex);
         }
@@ -178,7 +174,7 @@ impl OrbitModule for Wallpaper {
 
     fn apply_config<'a>(
         &mut self,
-        engine: &mut Engine<'a, ErasedMsg>,
+        engine: &mut Engine<'a>,
         config: Self::Config,
         _options: &mut orbit_api::ui::sctk::Options,
     ) -> bool {
@@ -194,7 +190,7 @@ impl OrbitModule for Wallpaper {
     fn update<'a>(
         &mut self,
         tid: TargetId,
-        engine: &mut Engine<'a, ErasedMsg>,
+        engine: &mut Engine<'a>,
         event: &Event<Self::Message>,
         _orbit: &OrbitCtl,
     ) -> bool {

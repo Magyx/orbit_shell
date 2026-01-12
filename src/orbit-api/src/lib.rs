@@ -55,6 +55,8 @@ pub struct ErasedMsg {
     pub(crate) inner: Box<dyn crate::runtime::erased::DynMsg>,
 }
 
+pub type Engine<'a> = ui::graphics::Engine<'a, ErasedMsg>;
+
 // TODO: add from stream/async
 #[derive(Clone)]
 pub enum Subscription<M: Send + 'static> {
@@ -70,7 +72,7 @@ pub trait OrbitModule: Default + 'static {
     type Config: Serialize + DeserializeOwned + Default;
     type Message: Send + Clone + 'static;
 
-    fn cleanup<'a>(&mut self, _engine: &mut ui::graphics::Engine<'a, ErasedMsg>);
+    fn cleanup<'a>(&mut self, _engine: &mut Engine<'a>);
 
     // Config
     fn validate_config(config: &serde_yml::Value) -> Result<(), String> {
@@ -80,7 +82,7 @@ pub trait OrbitModule: Default + 'static {
     }
     fn apply_config<'a>(
         &mut self,
-        _engine: &mut ui::graphics::Engine<'a, ErasedMsg>,
+        _engine: &mut Engine<'a>,
         _config: Self::Config,
         _options: &mut ui::sctk::Options,
     ) -> bool {
@@ -91,7 +93,7 @@ pub trait OrbitModule: Default + 'static {
     fn update<'a>(
         &mut self,
         _tid: ui::graphics::TargetId,
-        _engine: &mut ui::graphics::Engine<'a, ErasedMsg>,
+        _engine: &mut Engine<'a>,
         _event: &Event<Self::Message>,
         _orbit: &OrbitCtl,
     ) -> bool {
