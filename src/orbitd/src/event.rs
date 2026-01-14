@@ -14,4 +14,5 @@ pub enum Event {
 pub enum Ui {
     Sctk(SctkEvent),
     Orbit(ModuleId, SctkEvent),
+    ForceRedraw(ModuleId),
 }

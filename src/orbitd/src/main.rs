@@ -496,6 +496,25 @@ impl<'a> Orbit<'a> {
                                             ui::sctk::SctkEvent::message(base.clone_for_send());
                                         handle_for(tid, &mid, &event);
                                     }
+                                } else {
+                                    for tid in self.by_module.get(&mid).into_iter().flatten() {
+                                        handle_for(tid, &mid, &sctk_event);
+                                    }
+                                }
+                            }
+                            event::Ui::ForceRedraw(mid) => {
+                                let Some(tids) = self.by_module.get(&mid) else {
+                                    continue;
+                                };
+                                for &tid in tids {
+                                    if let Some(module) = self.modules.get_mut(&mid) {
+                                        self.engine.render_if_needed(
+                                            &tid,
+                                            true,
+                                            &|tid, s: &ModuleInfo| s.as_ref().view(tid),
+                                            module,
+                                        );
+                                    }
                                 }
                             }
                         }
@@ -591,7 +610,7 @@ impl<'a> Orbit<'a> {
                     },
                     Event::Config(config_event) => match config_event {
                         ConfigEvent::Reload(new_config) => {
-                            if self.config == new_config {
+                            if self.config == new_config && self.errors.is_empty() {
                                 continue;
                             }
 
@@ -689,10 +708,7 @@ impl<'a> Orbit<'a> {
                                             &mid,
                                             module,
                                         );
-                                        let _ = tx.send(Event::Ui(event::Ui::Orbit(
-                                            mid,
-                                            SctkEvent::Redraw,
-                                        )));
+                                        let _ = tx.send(Event::Ui(event::Ui::ForceRedraw(mid)));
                                     }
                                 }
                             }
