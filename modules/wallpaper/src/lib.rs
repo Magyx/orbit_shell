@@ -172,6 +172,34 @@ impl OrbitModule for Wallpaper {
         }
     }
 
+    fn validate_config(cfg: Self::Config) -> Result<(), String> {
+        let mut errors = Vec::new();
+
+        for widget in cfg.widgets.into_iter() {
+            match widget {
+                WidgetConfig::Clock {
+                    font_size,
+                    time_format,
+                    ..
+                } => {
+                    if font_size <= 0.0 {
+                        errors.push("- font_size must be > 0".into());
+                    }
+
+                    if let Err(e) = chrono::format::StrftimeItems::new(&time_format).parse() {
+                        errors.push(format!("- invalid time_format `{time_format}`: {e}"));
+                    }
+                }
+            }
+        }
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors.join("\n"))
+        }
+    }
+
     fn apply_config<'a>(
         &mut self,
         engine: &mut Engine<'a>,
@@ -181,9 +209,7 @@ impl OrbitModule for Wallpaper {
         if self.cfg.source != config.source {
             Self::cleanup(self, engine);
         }
-        if self.cfg != config {
-            self.cfg = config;
-        }
+        self.cfg = config;
         false
     }
 
@@ -236,8 +262,8 @@ impl OrbitModule for Wallpaper {
         ])
         .size(Size::splat(Grow));
 
-        for w in self.cfg.widgets.iter() {
-            match w {
+        for widget in self.cfg.widgets.iter() {
+            match widget {
                 WidgetConfig::Clock {
                     x,
                     y,
