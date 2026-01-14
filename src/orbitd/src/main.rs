@@ -1,6 +1,6 @@
 // TODO: better error messages cmon dude
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     fmt::Write,
     fs,
     path::{Path, PathBuf},
@@ -11,27 +11,24 @@ use calloop::{
     EventLoop, LoopHandle, RegistrationToken, channel as loop_channel,
     timer::{TimeoutAction, Timer},
 };
-use serde_yml::{Mapping, Value};
+use serde_yml::Value;
 use smithay_client_toolkit::reexports::calloop_wayland_source::WaylandSource;
 use ui::{
-    graphics::{Engine, TargetId},
+    graphics::TargetId,
     render::pipeline::PipelineKey,
     sctk::{SctkEvent, SurfaceId, state::SctkState},
 };
 
-use orbit_api::{ErasedMsg, OrbitCtl, runtime::OrbitModuleDyn};
+use orbit_api::{Engine, ErasedMsg, OrbitCtl};
 use orbit_dbus::DbusEvent;
 
 use crate::{
-    config::{ConfigEvent, ConfigWatcher},
+    config::{Config, ConfigEvent, ConfigInstruction, ConfigWatcher, compare_configs},
+    module::ModuleInfo,
     sctk::{CreatedSurface, SctkApp},
 };
 
-use {
-    dbus::OrbitdServer,
-    event::Event,
-    module::{Module, ModuleId},
-};
+use {dbus::OrbitdServer, event::Event, module::ModuleId};
 
 mod config;
 mod dbus;
@@ -40,57 +37,6 @@ mod event;
 mod module;
 mod sctk;
 mod trace;
-
-struct ConfigInstruction {
-    should_unrealize: bool,
-    should_realize: bool,
-    config_changed: bool,
-}
-
-struct ModuleInfo {
-    name: String,
-    path: PathBuf,
-    inner: Option<Module>,
-    toggled: bool,
-}
-
-impl ModuleInfo {
-    pub fn new(name: String, path: PathBuf) -> Self {
-        Self {
-            name,
-            path,
-            inner: None,
-            toggled: false,
-        }
-    }
-
-    pub fn is_loaded(&self) -> bool {
-        self.inner.is_some()
-    }
-
-    pub fn ensure_loaded(&mut self) -> Result<(), String> {
-        if self.inner.is_none() {
-            self.inner = Some(Module::new(&self.path)?);
-        }
-
-        Ok(())
-    }
-
-    pub fn unload(&mut self, engine: &mut Engine<'_, ErasedMsg>) {
-        if let Some(mut module) = self.inner.take() {
-            module.as_mut().cleanup(engine);
-        }
-        self.toggled = false;
-    }
-
-    pub fn as_ref(&self) -> &dyn OrbitModuleDyn {
-        self.inner.as_ref().expect("module not loaded").as_ref()
-    }
-
-    pub fn as_mut(&mut self) -> &mut dyn OrbitModuleDyn {
-        self.inner.as_mut().expect("module not loaded").as_mut()
-    }
-}
 
 struct Orbit<'a> {
     dbus_rx: Option<loop_channel::Channel<DbusEvent>>,
@@ -103,13 +49,13 @@ struct Orbit<'a> {
     sctk: SctkApp,
 
     config_path: PathBuf,
-    config: serde_yml::Value,
+    config: Config,
     modules: HashMap<ModuleId, ModuleInfo>,
     subs: HashMap<ModuleId, Vec<RegistrationToken>>,
     error_dialog: Vec<(TargetId, SurfaceId)>,
     errors: Vec<String>,
 
-    engine: Engine<'a, ErasedMsg>,
+    engine: Engine<'a>,
     by_module: HashMap<ModuleId, Vec<TargetId>>,
     by_surface: HashMap<SurfaceId, (TargetId, ModuleId)>,
 }
@@ -121,7 +67,7 @@ impl<'a> Orbit<'a> {
         let (sctk_rx, sctk) = SctkApp::new()?;
         let mut engine = Engine::default();
 
-        let mut config = config::load_cfg(&config_path).map_err(|e| e.to_string())?;
+        let mut config = config::load_cfg(&config_path)?;
         let modules =
             Self::discover_and_load_modules(&mut config, &config_path, &mut engine, None)?;
         let modules_len = modules.len();
@@ -152,28 +98,10 @@ impl<'a> Orbit<'a> {
         })
     }
 
-    fn is_enabled(map: Option<&serde_yml::Mapping>, name: &str) -> Result<bool, String> {
-        let Some(map) = map else {
-            return Ok(false);
-        };
-        let Some(modules_val) = map.get("modules") else {
-            return Ok(false);
-        };
-        let Some(modules_map) = modules_val.as_mapping() else {
-            return Ok(false);
-        };
-        let Some(module) = modules_map.get(name) else {
-            return Ok(false);
-        };
-        module
-            .as_bool()
-            .ok_or_else(|| format!("Module value for {} is not a bool!", name))
-    }
-
     fn discover_and_load_modules(
-        cfg: &mut serde_yml::Value,
+        cfg: &mut Config,
         config_path: &Path,
-        engine: &mut Engine<'a, ErasedMsg>,
+        engine: &mut Engine<'a>,
         prev_module_len: Option<usize>,
     ) -> Result<HashMap<ModuleId, ModuleInfo>, String> {
         match Self::discover_modules(config_path, prev_module_len) {
@@ -222,15 +150,15 @@ impl<'a> Orbit<'a> {
 
     fn load_modules(
         modules: Vec<ModuleInfo>,
-        cfg: &mut serde_yml::Value,
-        engine: &mut Engine<'a, ErasedMsg>,
+        cfg: &Config,
+        engine: &mut Engine<'a>,
     ) -> Result<HashMap<ModuleId, ModuleInfo>, String> {
         let mut loaded_modules = HashMap::with_capacity(modules.len());
         let mut next_id: u32 = 0;
         for mut module in modules {
-            let enabled = Self::is_enabled(cfg.as_mapping(), &module.name)?;
+            let enabled = cfg.enabled(&module.name);
             if enabled {
-                Self::load_module(engine, cfg.as_mapping_mut().unwrap(), &mut module)?;
+                Self::load_module(engine, cfg.get(&module.name), &mut module)?;
                 module.toggled = module.as_ref().manifest().show_on_startup;
             } else {
                 module.toggled = false;
@@ -246,79 +174,20 @@ impl<'a> Orbit<'a> {
     }
 
     fn load_module(
-        engine: &mut Engine<'a, ErasedMsg>,
-        map: &mut serde_yml::Mapping,
+        engine: &mut Engine<'a>,
+        map: Option<&serde_yml::Value>,
         module: &mut ModuleInfo,
     ) -> Result<(), String> {
-        let cfg_for_module = map
-            .entry(Value::String(module.name.clone()))
-            .or_insert_with(|| Value::Mapping(Mapping::new()));
-
         module.ensure_loaded()?;
-        module.as_ref().validate_config(cfg_for_module)?;
+        module
+            .as_ref()
+            .validate_config(map.unwrap_or(&Value::Null))?;
 
         for (key, factory) in module.as_ref().pipelines() {
             engine.register_pipeline(PipelineKey::Other(key), factory);
         }
 
         Ok(())
-    }
-
-    pub fn compare_configs(
-        old_config: &Value,
-        new_config: &Value,
-    ) -> Result<HashMap<String, ConfigInstruction>, &'static str> {
-        fn to_bool_map(m: &Mapping) -> Result<HashMap<String, bool>, &'static str> {
-            m.iter()
-                .map(|(k, v)| {
-                    let key = k.as_str().ok_or("Key is not a string")?.to_owned();
-                    let val = v.as_bool().ok_or("Value of module is not a bool")?;
-                    Ok((key, val))
-                })
-                .collect::<Result<HashMap<_, _>, _>>()
-        }
-
-        let (old_root, new_root) = match (old_config.as_mapping(), new_config.as_mapping()) {
-            (Some(o), Some(n)) => (o, n),
-            _ => return Err("Config could not be parsed!"),
-        };
-
-        let Some(old_modules_map) = old_root.get("modules").and_then(Value::as_mapping) else {
-            return Ok(HashMap::new());
-        };
-        let Some(new_modules_map) = new_root.get("modules").and_then(Value::as_mapping) else {
-            return Ok(HashMap::new());
-        };
-
-        let old_modules = to_bool_map(old_modules_map)?;
-        let new_modules = to_bool_map(new_modules_map)?;
-
-        let mut module_names: HashSet<String> = old_modules.keys().cloned().collect();
-        module_names.extend(new_modules.keys().cloned());
-
-        let mut out: HashMap<String, ConfigInstruction> = HashMap::new();
-        for name in module_names {
-            let old_enabled = *old_modules.get(&name).unwrap_or(&false);
-            let new_enabled = *new_modules.get(&name).unwrap_or(&false);
-
-            let should_unrealize = old_enabled && !new_enabled;
-            let should_realize = !old_enabled && new_enabled;
-
-            let old_cfg = old_root.get(name.as_str()).and_then(Value::as_mapping);
-            let new_cfg = new_root.get(name.as_str()).and_then(Value::as_mapping);
-            let config_changed = old_cfg != new_cfg;
-
-            out.insert(
-                name,
-                ConfigInstruction {
-                    should_unrealize,
-                    should_realize,
-                    config_changed,
-                },
-            );
-        }
-
-        Ok(out)
     }
 
     fn add_subscriptions(
@@ -410,7 +279,7 @@ impl<'a> Orbit<'a> {
         &mut self,
         tx: &mpsc::Sender<Event>,
         loop_handle: &mut LoopHandle<SctkState>,
-        cfg: &mut serde_yml::Value,
+        cfg: &Config,
         modules: &mut HashMap<ModuleId, ModuleInfo>,
     ) {
         for (&mid, module) in modules.iter_mut() {
@@ -422,7 +291,7 @@ impl<'a> Orbit<'a> {
         &mut self,
         tx: &mpsc::Sender<Event>,
         loop_handle: &mut LoopHandle<SctkState>,
-        cfg: &serde_yml::Value,
+        cfg: &Config,
         mid: ModuleId,
         module: &mut ModuleInfo,
         opts: Option<ui::sctk::Options>,
@@ -435,8 +304,10 @@ impl<'a> Orbit<'a> {
             o
         } else {
             let mut o = module.as_ref().manifest().options.clone();
-            if let Some(cfg) = cfg.get(&module.name) {
-                module.as_mut().apply_config(&mut self.engine, cfg, &mut o);
+            if let Some(value) = cfg.get(&module.name) {
+                module
+                    .as_mut()
+                    .apply_config(&mut self.engine, value, &mut o);
             }
             o
         };
@@ -459,7 +330,7 @@ impl<'a> Orbit<'a> {
         &mut self,
         tx: &mpsc::Sender<Event>,
         loop_handle: &mut LoopHandle<SctkState>,
-        cfg: &serde_yml::Value,
+        cfg: &Config,
         mid: ModuleId,
         module: &mut ModuleInfo,
     ) {
@@ -470,7 +341,7 @@ impl<'a> Orbit<'a> {
         &mut self,
         tx: &mpsc::Sender<Event>,
         loop_handle: &mut LoopHandle<SctkState>,
-        cfg: &serde_yml::Value,
+        cfg: &Config,
         mid: ModuleId,
         module: &mut ModuleInfo,
         opts: ui::sctk::Options,
@@ -563,9 +434,9 @@ impl<'a> Orbit<'a> {
         );
 
         {
-            let mut config = std::mem::take(&mut self.config);
+            let config = std::mem::take(&mut self.config);
             let mut modules = std::mem::take(&mut self.modules);
-            self.realize_modules(&tx, &mut event_loop.handle(), &mut config, &mut modules);
+            self.realize_modules(&tx, &mut event_loop.handle(), &config, &mut modules);
             self.config = config;
             self.modules = modules;
         }
@@ -653,11 +524,11 @@ impl<'a> Orbit<'a> {
                                 Some(self.modules.len()),
                             ) {
                                 Ok(mut modules) => {
-                                    let mut config = std::mem::take(&mut self.config);
+                                    let config = std::mem::take(&mut self.config);
                                     self.realize_modules(
                                         &tx,
                                         &mut event_loop.handle(),
-                                        &mut config,
+                                        &config,
                                         &mut modules,
                                     );
                                     self.config = config;
@@ -719,21 +590,20 @@ impl<'a> Orbit<'a> {
                         }
                     },
                     Event::Config(config_event) => match config_event {
-                        ConfigEvent::Reload(mut new_config) => {
+                        ConfigEvent::Reload(new_config) => {
                             if self.config == new_config {
                                 continue;
                             }
 
                             let mut errors = Vec::new();
-                            let instructions =
-                                match Self::compare_configs(&self.config, &new_config) {
-                                    Ok(i) => i,
-                                    Err(e) => {
-                                        let _ = tx
-                                            .send(Event::Config(ConfigEvent::Err(vec![e.into()])));
-                                        continue;
-                                    }
-                                };
+                            let instructions = match compare_configs(&self.config, &new_config) {
+                                Ok(i) => i,
+                                Err(e) => {
+                                    let _ =
+                                        tx.send(Event::Config(ConfigEvent::Err(vec![e.into()])));
+                                    continue;
+                                }
+                            };
                             let mid_by_name: HashMap<String, ModuleId> = self
                                 .modules
                                 .iter()
@@ -759,27 +629,21 @@ impl<'a> Orbit<'a> {
                                     continue;
                                 };
 
-                                let new_enabled = new_config
-                                    .as_mapping()
-                                    .map(|m| Self::is_enabled(Some(m), &name).unwrap_or(false))
-                                    .unwrap_or(false);
-
                                 if should_unrealize {
                                     module.toggled = false;
                                     self.unrealize_module(&mut event_loop.handle(), mid);
                                     module.unload(&mut self.engine);
                                 }
 
-                                if (should_realize || config_changed) && new_enabled {
-                                    let new_config_map = new_config
-                                        .as_mapping_mut()
-                                        .expect("should exist from compare_configs");
-                                    if let Err(e) =
-                                        Self::load_module(&mut self.engine, new_config_map, module)
-                                    {
-                                        errors.push(e);
-                                        continue;
-                                    }
+                                if (should_realize || config_changed)
+                                    && let Err(e) = Self::load_module(
+                                        &mut self.engine,
+                                        new_config.get(&name),
+                                        module,
+                                    )
+                                {
+                                    errors.push(e);
+                                    continue;
                                 }
 
                                 if should_realize {
@@ -797,7 +661,7 @@ impl<'a> Orbit<'a> {
 
                                 if !should_realize
                                     && config_changed
-                                    && new_enabled
+                                    && new_config.enabled(&name)
                                     && let Some(cfg) = new_config.get(&module.name)
                                 {
                                     let mut opts = module.as_ref().manifest().options.clone();

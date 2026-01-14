@@ -89,7 +89,7 @@ impl OrbitIface {
 impl OrbitIface {
     fn alive(&self) {}
     fn reload(&self) -> String {
-        tracing::info!("dbus: reload");
+        tracing::info!("reload");
         let (resp_tx, resp_rx) = mpsc::channel::<String>();
         let _ = self.tx.send(DbusEvent::Reload(resp_tx));
 
@@ -98,7 +98,7 @@ impl OrbitIface {
             .unwrap_or("timeout or no response".into())
     }
     fn modules(&self) -> String {
-        tracing::info!("dbus: modules");
+        tracing::info!("modules");
         let (resp_tx, resp_rx) = mpsc::channel::<String>();
         let _ = self.tx.send(DbusEvent::Modules(resp_tx));
 
@@ -107,11 +107,11 @@ impl OrbitIface {
             .unwrap_or("timeout or no response".into())
     }
     fn toggle(&self, module: &str) {
-        tracing::info!(module = %module, "dbus: toggle");
+        tracing::info!(module = %module, "toggle");
         let _ = self.tx.send(DbusEvent::Toggle(module.to_string()));
     }
     fn exit(&self) {
-        tracing::warn!("dbus: exit requested");
+        tracing::warn!("exit requested");
         let _ = self.tx.send(DbusEvent::Exit);
     }
 }

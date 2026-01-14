@@ -1,4 +1,5 @@
 use std::{
+    collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
     sync::mpsc,
@@ -11,8 +12,69 @@ use serde_yml::{Mapping, Value};
 
 #[derive(Debug)]
 pub enum ConfigEvent {
-    Reload(serde_yml::Value),
+    Reload(Config),
     Err(Vec<String>),
+}
+
+#[derive(Default, Debug)]
+pub struct Config {
+    pub modules: HashMap<String, bool>,
+    pub config: HashMap<String, Value>,
+    pub extra: Mapping,
+}
+
+impl Config {
+    pub fn from_value(v: Value) -> Result<Self, String> {
+        let Some(root) = v.as_mapping() else {
+            return Ok(Self::default());
+        };
+
+        let mut out = Self::default();
+
+        if let Some(modules_val) = root.get("modules")
+            && let Some(m) = modules_val.as_mapping()
+        {
+            for (k, v) in m {
+                let Some(name) = k.as_str() else {
+                    return Err("modules key is not a string".into());
+                };
+                let Some(b) = v.as_bool() else {
+                    return Err(format!("modules.{name} is not a bool"));
+                };
+                out.modules.insert(name.to_owned(), b);
+            }
+        }
+
+        for (k, v) in root {
+            let Some(key) = k.as_str() else { continue };
+
+            if key == "modules" {
+                continue;
+            }
+
+            out.config.insert(key.to_owned(), v.clone());
+        }
+
+        out.extra = root.clone();
+
+        Ok(out)
+    }
+
+    #[inline]
+    pub fn enabled(&self, name: &str) -> bool {
+        self.modules.get(name).copied().unwrap_or(false)
+    }
+
+    #[inline]
+    pub fn get(&self, name: &str) -> Option<&Value> {
+        self.config.get(name)
+    }
+}
+
+impl PartialEq for Config {
+    fn eq(&self, other: &Self) -> bool {
+        self.modules == other.modules && self.config == other.config
+    }
 }
 
 pub struct ConfigWatcher {
@@ -102,7 +164,7 @@ impl ConfigWatcher {
                             tracing::info!("config changed, reloading");
                             let event = match load_cfg(&base) {
                                 Ok(v) => ConfigEvent::Reload(v),
-                                Err(e) => ConfigEvent::Err(vec![e.into()]),
+                                Err(e) => ConfigEvent::Err(vec![e]),
                             };
                             let _ = tx.send(event);
                             last = Instant::now();
@@ -148,18 +210,59 @@ pub fn cfg_path(base: &Path) -> PathBuf {
     base.join("config.yaml")
 }
 
-pub fn load_cfg(base: &Path) -> Result<serde_yml::Value, &'static str> {
+pub fn load_cfg(base: &Path) -> Result<Config, String> {
     let path = cfg_path(base);
     let deadline = Instant::now() + Duration::from_millis(750);
 
     loop {
         match fs::read_to_string(&path) {
-            Ok(text) => return serde_yml::from_str(&text).map_err(|_| "invalid config.yaml"),
+            Ok(text) => {
+                return Config::from_value(
+                    serde_yml::from_str(&text).map_err(|_| "invalid config.yaml")?,
+                );
+            }
             Err(_) if Instant::now() < deadline => {
                 std::thread::sleep(Duration::from_millis(50));
                 continue;
             }
-            Err(_) => return Ok(Value::Mapping(Mapping::new())),
+            Err(_) => return Ok(Config::default()),
         }
     }
+}
+
+pub struct ConfigInstruction {
+    pub should_unrealize: bool,
+    pub should_realize: bool,
+    pub config_changed: bool,
+}
+
+pub fn compare_configs(
+    old: &Config,
+    new: &Config,
+) -> Result<HashMap<String, ConfigInstruction>, &'static str> {
+    let mut names: HashSet<String> = old.modules.keys().cloned().collect();
+    names.extend(new.modules.keys().cloned());
+    names.extend(old.config.keys().cloned());
+    names.extend(new.config.keys().cloned());
+
+    let mut out = HashMap::new();
+    for name in names {
+        let old_enabled = old.enabled(&name);
+        let new_enabled = new.enabled(&name);
+
+        let old_cfg = old.get(name.as_str());
+        let new_cfg = new.get(name.as_str());
+        let config_changed = new_enabled && old_cfg != new_cfg;
+
+        out.insert(
+            name,
+            ConfigInstruction {
+                should_unrealize: old_enabled && !new_enabled,
+                should_realize: !old_enabled && new_enabled,
+                config_changed,
+            },
+        );
+    }
+
+    Ok(out)
 }
