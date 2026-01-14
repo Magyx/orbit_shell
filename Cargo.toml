@@ -9,3 +9,6 @@ members = [
   "modules/wallpaper",
   "modules/bar",
 ]
+
+[workspace.dependencies]
+ui = { git = "https://github.com/Magyx/ui_lib.git", rev = "01bc947" }

@@ -367,37 +367,6 @@ impl<'a> Orbit<'a> {
         self.sctk.destroy_surfaces(&sids);
     }
 
-    fn tick_all_targets(&mut self, orbit: &orbit_api::OrbitCtl) {
-        for (&mid, tids) in self.by_module.clone().iter() {
-            for &tid in tids {
-                if let Some(module) = self.modules.get_mut(&mid) {
-                    let need = self.engine.poll(
-                        &tid,
-                        &mut |eng, e, s: &mut ModuleInfo, ctl| s.as_mut().update(tid, eng, e, ctl),
-                        module,
-                        orbit,
-                    );
-                    self.engine.render_if_needed(
-                        &tid,
-                        need,
-                        &|tid, s: &ModuleInfo| s.as_ref().view(tid),
-                        module,
-                    );
-                }
-            }
-        }
-        for (tid, _) in self.error_dialog.iter() {
-            let need = self.engine.poll(
-                tid,
-                &mut |_, _: &ui::event::Event<ErasedMsg, SctkEvent>, (), _| false,
-                &mut (),
-                orbit,
-            );
-            self.engine
-                .render_if_needed(tid, need, &dialog::error_view, &mut self.errors);
-        }
-    }
-
     fn run(&mut self) {
         self.d_server.start();
         self.config_watcher.start(&self.config_path);
@@ -405,7 +374,7 @@ impl<'a> Orbit<'a> {
         let (tx, rx) = mpsc::channel::<Event>();
         let orbit_loop = OrbitCtl::new();
         let mut event_loop: EventLoop<SctkState> = EventLoop::try_new().expect("err");
-        let _ = WaylandSource::new(self.sctk.conn.clone(), self.sctk.take_event_queu())
+        let _ = WaylandSource::new(self.sctk.conn.clone(), self.sctk.take_event_queue())
             .insert(event_loop.handle());
 
         let _ = event_loop.handle().insert_source(
@@ -441,7 +410,7 @@ impl<'a> Orbit<'a> {
             self.modules = modules;
         }
 
-        while !orbit_loop.orbit_should_close() {
+        while !orbit_loop.take_close_orbit() {
             _ = event_loop.dispatch(None, &mut self.sctk.state);
 
             let mut need_tick = false;
@@ -462,6 +431,10 @@ impl<'a> Orbit<'a> {
                                     module,
                                     &orbit_loop,
                                 );
+                                if orbit_loop.take_close_module() {
+                                    _ = tx
+                                        .send(Event::Dbus(DbusEvent::Toggle(module.name.clone())));
+                                }
                             }
                         };
                         match ui_event {
@@ -729,7 +702,39 @@ impl<'a> Orbit<'a> {
                 }
             }
             if need_tick {
-                self.tick_all_targets(&orbit_loop);
+                for (&mid, tids) in self.by_module.clone().iter() {
+                    for &tid in tids {
+                        if let Some(module) = self.modules.get_mut(&mid) {
+                            let need = self.engine.poll(
+                                &tid,
+                                &mut |eng, e, s: &mut ModuleInfo, ctl| {
+                                    s.as_mut().update(tid, eng, e, ctl)
+                                },
+                                module,
+                                &orbit_loop,
+                            );
+                            self.engine.render_if_needed(
+                                &tid,
+                                need,
+                                &|tid, s: &ModuleInfo| s.as_ref().view(tid),
+                                module,
+                            );
+                            if orbit_loop.take_close_module() {
+                                _ = tx.send(Event::Dbus(DbusEvent::Toggle(module.name.clone())));
+                            }
+                        }
+                    }
+                }
+                for (tid, _) in self.error_dialog.iter() {
+                    let need = self.engine.poll(
+                        tid,
+                        &mut |_, _: &ui::event::Event<ErasedMsg, SctkEvent>, (), _| false,
+                        &mut (),
+                        &orbit_loop,
+                    );
+                    self.engine
+                        .render_if_needed(tid, need, &dialog::error_view, &mut self.errors);
+                }
             }
         }
 

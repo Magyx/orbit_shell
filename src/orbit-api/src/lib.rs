@@ -25,21 +25,6 @@ impl Default for OrbitCtl {
 }
 
 impl OrbitCtl {
-    pub fn new() -> Self {
-        Self {
-            exit_orbit: AtomicBool::new(false),
-            exit_module: AtomicBool::new(false),
-        }
-    }
-
-    pub fn orbit_should_close(&self) -> bool {
-        self.exit_orbit.load(std::sync::atomic::Ordering::Relaxed)
-    }
-    pub fn module_should_close(&self) -> bool {
-        self.exit_module
-            .swap(false, std::sync::atomic::Ordering::Relaxed)
-    }
-
     pub fn close_orbit(&self) {
         self.exit_orbit
             .store(true, std::sync::atomic::Ordering::Relaxed);
@@ -47,6 +32,23 @@ impl OrbitCtl {
     pub fn close_module(&self) {
         self.exit_module
             .store(true, std::sync::atomic::Ordering::Relaxed)
+    }
+
+    #[cfg(feature = "host")]
+    pub fn new() -> Self {
+        Self {
+            exit_orbit: AtomicBool::new(false),
+            exit_module: AtomicBool::new(false),
+        }
+    }
+    #[cfg(feature = "host")]
+    pub fn take_close_orbit(&self) -> bool {
+        self.exit_orbit.load(std::sync::atomic::Ordering::Relaxed)
+    }
+    #[cfg(feature = "host")]
+    pub fn take_close_module(&self) -> bool {
+        self.exit_module
+            .swap(false, std::sync::atomic::Ordering::Relaxed)
     }
 }
 

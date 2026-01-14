@@ -86,7 +86,7 @@ impl SctkApp {
         ))
     }
 
-    pub fn take_event_queu(&mut self) -> EventQueue<SctkState> {
+    pub fn take_event_queue(&mut self) -> EventQueue<SctkState> {
         self.event_queue.take().expect("event_queue already taken")
     }
 
@@ -106,6 +106,7 @@ impl SctkApp {
                     RawWaylandHandles::new(&self.conn, &self.state.surfaces[&sid].wl_surface);
                 items.push(CreatedSurface { sid, handles, size });
             }
+            ui::sctk::Options::Lock(lock_opts) => _ = self.state.lock_session(&self.qh, lock_opts),
         }
         items
     }
