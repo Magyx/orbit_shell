@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use serde::{Deserialize, Serialize};
+use orbit_api::serde::{Deserialize, Serialize};
 
 fn default_clock_font_size() -> f32 {
     48.0
@@ -10,7 +10,7 @@ fn default_time_format() -> String {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "type", rename_all = "kebab-case")]
+#[serde(crate = "orbit_api::serde", tag = "type", rename_all = "kebab-case")]
 pub enum WidgetConfig {
     Clock {
         x: f32,
@@ -23,6 +23,7 @@ pub enum WidgetConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(crate = "orbit_api::serde")]
 pub struct Config {
     pub source: PathBuf,
     pub cycle: String,

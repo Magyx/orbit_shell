@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 ui = { workspace = true, features = ["sctk"] }
-serde = "1.0.228"
+serde = { version = "1.0.228", features = ["derive"] }
 serde_yml = "0.0.12"
 calloop = "0.14.3"
 tracing = "0.1.44"

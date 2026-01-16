@@ -8,8 +8,6 @@ crate-type = ["cdylib"]
 
 [dependencies]
 orbit-api = { path = "../../src/orbit-api" }
-serde = "1"
-serde_yml = "0.0.12"
 image = { version = "0.25.8", default-features = false, features = [
   "png",
   "jpeg",

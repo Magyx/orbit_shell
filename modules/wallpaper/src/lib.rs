@@ -18,7 +18,7 @@ use orbit_api::{
     },
 };
 
-use crate::config::{Config, WidgetConfig};
+use config::*;
 
 mod config;
 

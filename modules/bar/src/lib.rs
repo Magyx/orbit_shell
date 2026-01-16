@@ -10,14 +10,14 @@ use orbit_api::{
         widget::{Column, Element, Length, Row, Spacer, Text},
     },
 };
-use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug)]
 pub enum Msg {
     Tick,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(crate = "orbit_api::serde")]
 pub struct Config {
     /// Bar height in pixels
     pub height: u32,

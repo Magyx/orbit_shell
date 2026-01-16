@@ -140,6 +140,7 @@ macro_rules! orbit_plugin {
         show_on_startup = $show:expr,
         pipelines = $pipelines:expr
     ) => {
+        use $crate::{serde, serde_yml::{self, Value}};
         use orbit_api::{ErasedMsg as __ErasedMsg, Event as __Event, ui::{graphics::{Engine as __Engine, TargetId as __TargetId}, render::pipeline::Pipeline as __Pipeline}};
 
         struct __Wrapper {
@@ -163,7 +164,6 @@ macro_rules! orbit_plugin {
             }
 
             fn merged_config_value(raw: &serde_yml::Value) -> serde_yml::Value {
-                use serde_yml::Value;
 
                 fn merge(base: Value, overlay: &Value) -> Value {
                     match (base, overlay) {

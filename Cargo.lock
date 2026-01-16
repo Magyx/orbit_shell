@@ -246,8 +246,6 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "orbit-api",
- "serde",
- "serde_yml",
 ]
 
 [[package]]
@@ -2116,8 +2114,6 @@ dependencies = [
  "image",
  "orbit-api",
  "rand",
- "serde",
- "serde_yml",
  "xdg-user",
 ]
 
