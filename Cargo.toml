@@ -11,4 +11,4 @@ members = [
 ]
 
 [workspace.dependencies]
-ui = { git = "https://github.com/Magyx/ui_lib.git", rev = "01bc947" }
+ui = { git = "https://github.com/Magyx/ui_lib.git", rev = "98dee012" }

@@ -114,11 +114,14 @@ impl Wallpaper {
             return false;
         };
 
-        if let Ok(reader) = image::ImageReader::open(&p)
-            && let Ok(img) = reader.decode()
+        if let Some([w, h]) = engine.globals(tid).map(|g| g.window_size)
+            && let Ok(reader) = image::ImageReader::open(&p)
+            && let Ok(mut img) = reader.decode()
         {
+            let w = w.ceil() as u32;
+            let h = h.ceil() as u32;
+            img = img.resize_to_fill(w, h, image::imageops::FilterType::Nearest);
             let rgba = img.to_rgba8();
-            let (w, h) = rgba.dimensions();
             let handle = engine.load_texture_rgba8(w, h, rgba.as_raw());
             self.targets.insert(
                 *tid,
