@@ -1948,7 +1948,7 @@ dependencies = [
 [[package]]
 name = "ui"
 version = "0.1.0"
-source = "git+https://github.com/Magyx/ui_lib.git?rev=98dee012#98dee0123bab461324ad3bb0118aa22a30719339"
+source = "git+https://github.com/Magyx/ui_lib.git?rev=067ba3452260073c2beaa7b0bb703d6792080c56#067ba3452260073c2beaa7b0bb703d6792080c56"
 dependencies = [
  "anyhow",
  "bytemuck",

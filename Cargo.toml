@@ -11,7 +11,7 @@ members = [
 ]
 
 [workspace.dependencies]
-ui = { git = "https://github.com/Magyx/ui_lib.git", rev = "98dee012" }
+ui = { git = "https://github.com/Magyx/ui_lib.git", rev = "067ba3452260073c2beaa7b0bb703d6792080c56" }
 
 [profile.release]
 codegen-units = 1

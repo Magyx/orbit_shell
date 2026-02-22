@@ -11,8 +11,15 @@ pub enum Event {
 }
 
 #[derive(Debug)]
+pub enum SctkMessage {
+    OutputCreated,
+    SurfaceDestroyed(u32),
+}
+
+#[derive(Debug)]
 pub enum Ui {
+    Orbit(SctkMessage),
     Sctk(SctkEvent),
-    Orbit(ModuleId, SctkEvent),
+    Module(ModuleId, SctkEvent),
     ForceRedraw(ModuleId),
 }

@@ -39,6 +39,9 @@ mod sctk;
 mod trace;
 
 struct Orbit<'a> {
+    tx: mpsc::Sender<Event>,
+    rx: mpsc::Receiver<Event>,
+
     dbus_rx: Option<loop_channel::Channel<DbusEvent>>,
     d_server: OrbitdServer,
 
@@ -58,13 +61,16 @@ struct Orbit<'a> {
     engine: Engine<'a>,
     by_module: HashMap<ModuleId, Vec<TargetId>>,
     by_surface: HashMap<SurfaceId, (TargetId, ModuleId)>,
+    by_target: HashMap<TargetId, (SurfaceId, ModuleId)>,
 }
 
 impl<'a> Orbit<'a> {
     fn new(config_path: Option<PathBuf>) -> Result<Self, String> {
         let config_path = config_path.unwrap_or_else(config::xdg_config_home);
 
-        let (sctk_rx, sctk) = SctkApp::new()?;
+        let (tx, rx) = mpsc::channel::<Event>();
+
+        let (sctk_rx, sctk) = SctkApp::new(tx.clone())?;
         let mut engine = Engine::default();
 
         let mut config = config::load_cfg(&config_path)?;
@@ -76,6 +82,8 @@ impl<'a> Orbit<'a> {
         let (config_rx, config_watcher) = ConfigWatcher::new();
 
         Ok(Self {
+            tx,
+            rx,
             dbus_rx: Some(dbus_rx),
             d_server,
 
@@ -95,6 +103,7 @@ impl<'a> Orbit<'a> {
             engine,
             by_module: HashMap::with_capacity(modules_len),
             by_surface: HashMap::with_capacity(modules_len),
+            by_target: HashMap::with_capacity(modules_len),
         })
     }
 
@@ -231,7 +240,7 @@ impl<'a> Orbit<'a> {
                             let ui_tx = ui_tx.clone();
                             let mid = *mid;
                             move |_deadline: std::time::Instant, _, _| {
-                                let _ = ui_tx.send(Event::Ui(event::Ui::Orbit(
+                                let _ = ui_tx.send(Event::Ui(event::Ui::Module(
                                     mid,
                                     SctkEvent::message(base.clone_for_send()),
                                 )));
@@ -249,7 +258,7 @@ impl<'a> Orbit<'a> {
                             let ui_tx = ui_tx.clone();
                             let mid = *mid;
                             move |_deadline: std::time::Instant, _, _| {
-                                let _ = ui_tx.send(Event::Ui(event::Ui::Orbit(
+                                let _ = ui_tx.send(Event::Ui(event::Ui::Module(
                                     mid,
                                     SctkEvent::message(base.clone_for_send()),
                                 )));
@@ -317,6 +326,7 @@ impl<'a> Orbit<'a> {
             let tid = self.engine.attach_target(Arc::new(handles), size);
             self.by_module.entry(mid).or_default().push(tid);
             self.by_surface.insert(sid, (tid, mid));
+            self.by_target.insert(tid, (sid, mid));
         }
 
         self.add_subscriptions(tx, loop_handle, &mid, module);
@@ -361,17 +371,85 @@ impl<'a> Orbit<'a> {
             self.engine.detach_target(&tid);
         }
         self.by_surface.retain(|_, (_, owner)| *owner != mid);
+        self.by_target.retain(|_, (_, owner)| *owner != mid);
 
         self.remove_subscriptions(loop_handle, mid);
 
         self.sctk.destroy_surfaces(&sids);
     }
 
+    fn handle_sctk_event(
+        engine: &mut Engine,
+        modules: &mut HashMap<ModuleId, ModuleInfo>,
+        orbit_loop: &OrbitCtl,
+        event: &SctkEvent,
+        mid: &ModuleId,
+        tid: &TargetId,
+        tx: &mpsc::Sender<Event>,
+    ) {
+        if let Some(module) = modules.get_mut(mid) {
+            engine.handle_platform_event(
+                tid,
+                event,
+                &mut |eng, e, s: &mut ModuleInfo, ctl| s.as_mut().update(*tid, eng, e, ctl),
+                module,
+                orbit_loop,
+            );
+            if orbit_loop.take_close_module() {
+                _ = tx.send(Event::Dbus(DbusEvent::Toggle(module.name.clone())));
+            }
+        }
+    }
+
+    // TODO: only render those with changes
+    #[allow(clippy::too_many_arguments)]
+    fn render(
+        engine: &mut Engine,
+        modules: &mut HashMap<ModuleId, ModuleInfo>,
+        sctk: &mut SctkApp,
+        orbit_loop: &OrbitCtl,
+        mid: &ModuleId,
+        sid: &SurfaceId,
+        tid: &TargetId,
+        poll_override: bool,
+        tx: &mpsc::Sender<Event>,
+    ) {
+        if let Some(module) = modules.get_mut(mid) {
+            if !sctk.state.surfaces.contains_key(sid) {
+                return;
+            }
+
+            let need = sctk
+                .state
+                .surfaces
+                .get(sid)
+                .map(|s| s.configured)
+                .unwrap_or(false)
+                && (poll_override
+                    || engine.poll(
+                        tid,
+                        &mut |eng, e, s: &mut ModuleInfo, ctl| s.as_mut().update(*tid, eng, e, ctl),
+                        module,
+                        orbit_loop,
+                    ));
+            engine.render_if_needed(
+                tid,
+                need,
+                &|tid, s: &ModuleInfo| s.as_ref().view(tid),
+                module,
+            );
+
+            if orbit_loop.take_close_module() {
+                _ = tx.send(Event::Dbus(DbusEvent::Toggle(module.name.clone())));
+            }
+        }
+    }
+
     fn run(&mut self) {
         self.d_server.start();
         self.config_watcher.start(&self.config_path);
 
-        let (tx, rx) = mpsc::channel::<Event>();
+        let tx = self.tx.clone();
         let orbit_loop = OrbitCtl::new();
         let mut event_loop: EventLoop<SctkState> = EventLoop::try_new().expect("err");
         let _ = WaylandSource::new(self.sctk.conn.clone(), self.sctk.take_event_queue())
@@ -415,33 +493,61 @@ impl<'a> Orbit<'a> {
 
             let mut need_tick = false;
 
-            while let Ok(e) = rx.try_recv() {
+            while let Ok(e) = self.rx.try_recv() {
                 match e {
                     Event::Ui(ui_event) => {
                         need_tick = true;
 
-                        let mut handle_for = |tid: &TargetId, mid: &ModuleId, event: &SctkEvent| {
-                            if let Some(module) = self.modules.get_mut(mid) {
-                                self.engine.handle_platform_event(
-                                    tid,
-                                    event,
-                                    &mut |eng, e, s: &mut ModuleInfo, ctl| {
-                                        s.as_mut().update(*tid, eng, e, ctl)
-                                    },
-                                    module,
-                                    &orbit_loop,
-                                );
-                                if orbit_loop.take_close_module() {
-                                    _ = tx
-                                        .send(Event::Dbus(DbusEvent::Toggle(module.name.clone())));
-                                }
-                            }
-                        };
                         match ui_event {
-                            event::Ui::Sctk(sctk_event) => match sctk_event.surface_id() {
-                                Some(sid) => {
+                            event::Ui::Orbit(msg) => match msg {
+                                event::SctkMessage::SurfaceDestroyed(id) => {
+                                    tracing::info!(id = id, "entered output removed");
+
+                                    let sid = SurfaceId::new(id);
+
+                                    self.sctk.state.remove_surface_by_surface_id(sid);
+
+                                    if let Some((tid, _)) = self.by_surface.remove(&sid) {
+                                        self.engine.detach_target(&tid);
+                                        self.sctk.state.remove_surface_by_surface_id(sid);
+
+                                        self.by_target.remove(&tid);
+                                    }
+                                }
+                                event::SctkMessage::OutputCreated => {
+                                    for (mid, module) in self
+                                        .modules
+                                        .iter()
+                                        .filter(|(_, m)| m.is_loaded() && m.toggled)
+                                    {
+                                        let new_surfaces = self
+                                            .sctk
+                                            .ensure_surfaces(&module.as_ref().manifest().options);
+
+                                        for (sid, target, size) in new_surfaces {
+                                            let tid = self.engine.attach_target(target, size);
+
+                                            self.by_module
+                                                .entry(*mid)
+                                                .and_modify(|ts| ts.push(tid));
+                                            self.by_surface.insert(sid, (tid, *mid));
+                                            self.by_target.insert(tid, (sid, *mid));
+                                        }
+                                    }
+                                }
+                            },
+                            event::Ui::Sctk(sctk_event) => {
+                                if let Some(sid) = sctk_event.surface_id() {
                                     if let Some((tid, mid)) = self.by_surface.get(&sid) {
-                                        handle_for(tid, mid, &sctk_event);
+                                        Self::handle_sctk_event(
+                                            &mut self.engine,
+                                            &mut self.modules,
+                                            &orbit_loop,
+                                            &sctk_event,
+                                            mid,
+                                            tid,
+                                            &tx,
+                                        );
                                     } else if !self.error_dialog.is_empty() {
                                         for (tid, _) in
                                             self.error_dialog.iter().filter(|(_, s)| *s == sid)
@@ -455,23 +561,47 @@ impl<'a> Orbit<'a> {
                                             );
                                         }
                                     }
-                                }
-                                None => {
+                                } else {
                                     for (_, (tid, mid)) in self.by_surface.iter() {
-                                        handle_for(tid, mid, &sctk_event);
+                                        Self::handle_sctk_event(
+                                            &mut self.engine,
+                                            &mut self.modules,
+                                            &orbit_loop,
+                                            &sctk_event,
+                                            mid,
+                                            tid,
+                                            &tx,
+                                        );
                                     }
                                 }
-                            },
-                            event::Ui::Orbit(mid, sctk_event) => {
+                            }
+                            event::Ui::Module(mid, sctk_event) => {
+                                // TODO: is erased message even necessary here?
                                 if let Some(base) = sctk::take_erased_from_message(&sctk_event) {
                                     for tid in self.by_module.get(&mid).into_iter().flatten() {
                                         let event =
                                             ui::sctk::SctkEvent::message(base.clone_for_send());
-                                        handle_for(tid, &mid, &event);
+                                        Self::handle_sctk_event(
+                                            &mut self.engine,
+                                            &mut self.modules,
+                                            &orbit_loop,
+                                            &event,
+                                            &mid,
+                                            tid,
+                                            &tx,
+                                        );
                                     }
                                 } else {
                                     for tid in self.by_module.get(&mid).into_iter().flatten() {
-                                        handle_for(tid, &mid, &sctk_event);
+                                        Self::handle_sctk_event(
+                                            &mut self.engine,
+                                            &mut self.modules,
+                                            &orbit_loop,
+                                            &sctk_event,
+                                            &mid,
+                                            tid,
+                                            &tx,
+                                        );
                                     }
                                 }
                             }
@@ -479,15 +609,21 @@ impl<'a> Orbit<'a> {
                                 let Some(tids) = self.by_module.get(&mid) else {
                                     continue;
                                 };
-                                for &tid in tids {
-                                    if let Some(module) = self.modules.get_mut(&mid) {
-                                        self.engine.render_if_needed(
-                                            &tid,
-                                            true,
-                                            &|tid, s: &ModuleInfo| s.as_ref().view(tid),
-                                            module,
-                                        );
-                                    }
+                                for (tid, sid) in tids
+                                    .iter()
+                                    .filter_map(|t| self.by_target.get(t).map(|(s, _)| (t, s)))
+                                {
+                                    Self::render(
+                                        &mut self.engine,
+                                        &mut self.modules,
+                                        &mut self.sctk,
+                                        &orbit_loop,
+                                        &mid,
+                                        sid,
+                                        tid,
+                                        true,
+                                        &tx,
+                                    );
                                 }
                             }
                         }
@@ -701,28 +837,24 @@ impl<'a> Orbit<'a> {
                     },
                 }
             }
+
             if need_tick {
-                for (&mid, tids) in self.by_module.clone().iter() {
-                    for &tid in tids {
-                        if let Some(module) = self.modules.get_mut(&mid) {
-                            let need = self.engine.poll(
-                                &tid,
-                                &mut |eng, e, s: &mut ModuleInfo, ctl| {
-                                    s.as_mut().update(tid, eng, e, ctl)
-                                },
-                                module,
-                                &orbit_loop,
-                            );
-                            self.engine.render_if_needed(
-                                &tid,
-                                need,
-                                &|tid, s: &ModuleInfo| s.as_ref().view(tid),
-                                module,
-                            );
-                            if orbit_loop.take_close_module() {
-                                _ = tx.send(Event::Dbus(DbusEvent::Toggle(module.name.clone())));
-                            }
-                        }
+                for (mid, tids) in self.by_module.iter() {
+                    for (tid, sid) in tids
+                        .iter()
+                        .filter_map(|t| self.by_target.get(t).map(|(s, _)| (t, s)))
+                    {
+                        Self::render(
+                            &mut self.engine,
+                            &mut self.modules,
+                            &mut self.sctk,
+                            &orbit_loop,
+                            mid,
+                            sid,
+                            tid,
+                            false,
+                            &tx,
+                        );
                     }
                 }
                 for (tid, _) in self.error_dialog.iter() {
