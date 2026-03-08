@@ -31,7 +31,7 @@ pub enum Msg {
 
 #[derive(Debug)]
 pub struct PerTarget {
-    size: Option<Size<u32>>,
+    size: Size<u32>,
     file: PathBuf,
     tex: TextureHandle,
 }
@@ -105,6 +105,24 @@ impl Wallpaper {
         }
     }
 
+    fn load_texture<'a>(
+        file: &Path,
+        width: u32,
+        height: u32,
+        engine: &mut Engine<'a>,
+    ) -> Option<TextureHandle> {
+        if let Ok(reader) = image::ImageReader::open(file)
+            && let Ok(mut img) = reader.decode()
+        {
+            img = img.resize_to_fill(width, height, image::imageops::FilterType::Nearest);
+            let rgba = img.to_rgba8();
+            let handle = engine.load_texture_rgba8(width, height, rgba.as_raw());
+            Some(handle)
+        } else {
+            None
+        }
+    }
+
     fn ensure_texture_loaded<'a>(&mut self, tid: &TargetId, engine: &mut Engine<'a>) -> bool {
         if self.targets.contains_key(tid) || !self.cfg.source.exists() {
             return false;
@@ -115,25 +133,24 @@ impl Wallpaper {
         };
 
         if let Some([w, h]) = engine.globals(tid).map(|g| g.window_size)
-            && let Ok(reader) = image::ImageReader::open(&p)
-            && let Ok(mut img) = reader.decode()
+            && w > 1.0
+            && h > 1.0
+            && let width = w.ceil() as u32
+            && let height = h.ceil() as u32
+            && let Some(handle) = Self::load_texture(&p, width, height, engine)
         {
-            let w = w.ceil() as u32;
-            let h = h.ceil() as u32;
-            img = img.resize_to_fill(w, h, image::imageops::FilterType::Nearest);
-            let rgba = img.to_rgba8();
-            let handle = engine.load_texture_rgba8(w, h, rgba.as_raw());
             self.targets.insert(
                 *tid,
                 PerTarget {
-                    size: None,
+                    size: Size::new(width, height),
                     tex: handle,
                     file: p,
                 },
             );
-            return true;
+            true
+        } else {
+            false
         }
-        false
     }
 
     fn any_clock(&self) -> bool {
@@ -153,13 +170,11 @@ impl Wallpaper {
     where
         E: Into<Element<Msg>>,
     {
-        if let Some(target) = self.targets.get(tid)
-            && let Some(t_size) = target.size
-        {
+        if let Some(PerTarget { size, .. }) = self.targets.get(tid) {
             on.push(
                 element,
-                (t_size.width as f32 * x.clamp(0.0, 1.0)).ceil() as i32,
-                (t_size.height as f32 * y.clamp(0.0, 1.0)).ceil() as i32,
+                (size.width as f32 * x.clamp(0.0, 1.0)).ceil() as i32,
+                (size.height as f32 * y.clamp(0.0, 1.0)).ceil() as i32,
             );
         }
     }
@@ -226,20 +241,24 @@ impl OrbitModule for Wallpaper {
         let mut needs_redraw = self.ensure_texture_loaded(&tid, engine);
 
         match event {
-            Event::Resized { size } => {
-                if let Some(target) = self.targets.get_mut(&tid) {
-                    target.size = Some(*size);
-                    needs_redraw = true;
+            &Event::Resized { size } => {
+                if let Some(target) = self.targets.get_mut(&tid)
+                    && target.size != size
+                {
+                    engine.unload_texture(target.tex);
+                    if let Some(handle) =
+                        Self::load_texture(&target.file, size.width, size.height, engine)
+                    {
+                        target.tex = handle;
+                        target.size = size;
+                        needs_redraw = true;
+                    }
                 }
             }
             Event::Message(Msg::Cycle) => {
                 if let Some(target) = self.targets.remove(&tid) {
                     engine.unload_texture(target.tex);
-                    let loaded = self.ensure_texture_loaded(&tid, engine);
-                    if loaded {
-                        self.targets.get_mut(&tid).expect("just loaded").size = target.size;
-                    }
-                    needs_redraw |= loaded;
+                    needs_redraw |= self.ensure_texture_loaded(&tid, engine);
                 }
             }
             Event::Message(Msg::Tick) => {
