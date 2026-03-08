@@ -1,5 +1,4 @@
 use std::cell::RefCell;
-use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::{any::Any, rc::Rc};
 
@@ -12,14 +11,14 @@ use ui::{
 
 use crate::ErasedMsg;
 
-pub trait DynMsg: Send + Debug + 'static {
+pub trait DynMsg: Send + 'static {
     fn as_any(&self) -> &dyn Any;
     fn clone_box(&self) -> Box<dyn DynMsg>;
 }
 
 impl<T> DynMsg for T
 where
-    T: Any + Debug + Send + Clone + 'static,
+    T: Any + Send + Clone + 'static,
 {
     fn as_any(&self) -> &dyn Any {
         self
@@ -30,7 +29,7 @@ where
 }
 
 impl ErasedMsg {
-    pub fn new<M: 'static + Debug + Clone + Send>(m: M) -> Self {
+    pub fn new<M: 'static + Clone + Send>(m: M) -> Self {
         Self { inner: Box::new(m) }
     }
     pub fn message<M: 'static + Clone>(&self) -> Option<M> {
@@ -71,7 +70,7 @@ fn set_ui_state_back<M2, N2>(to: &mut ui_ctx::Context<N2>, mut from: ui_ctx::Con
     }
 }
 
-pub fn erase_element<M: Send + Debug + Clone + 'static>(elem: Element<M>) -> Element<ErasedMsg> {
+pub fn erase_element<M: Send + Clone + 'static>(elem: Element<M>) -> Element<ErasedMsg> {
     map_element(elem, ErasedMsg::new)
 }
 

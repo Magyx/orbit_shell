@@ -106,9 +106,26 @@ impl OrbitIface {
             .recv_timeout(Duration::from_secs(2))
             .unwrap_or("timeout or no response".into())
     }
+    fn commands(&self, module: &str) -> String {
+        tracing::info!(module = %module, "commands");
+        let (resp_tx, resp_rx) = mpsc::channel::<String>();
+        let _ = self
+            .tx
+            .send(DbusEvent::Commands(module.to_string(), resp_tx));
+
+        resp_rx
+            .recv_timeout(Duration::from_secs(2))
+            .unwrap_or("timeout or no response".into())
+    }
     fn toggle(&self, module: &str) {
         tracing::info!(module = %module, "toggle");
         let _ = self.tx.send(DbusEvent::Toggle(module.to_string()));
+    }
+    fn command(&self, module: &str, command: &str) {
+        tracing::info!(module = %module, command = %command, "command");
+        let _ = self
+            .tx
+            .send(DbusEvent::Command(module.to_string(), command.to_string()));
     }
     fn exit(&self) {
         tracing::warn!("exit requested");

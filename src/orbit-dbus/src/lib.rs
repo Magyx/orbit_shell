@@ -6,6 +6,8 @@ pub const INTERFACE: &str = "io.github.orbitshell.Orbit1";
 pub enum DbusEvent {
     Reload(std::sync::mpsc::Sender<String>),
     Modules(std::sync::mpsc::Sender<String>),
+    Commands(String, std::sync::mpsc::Sender<String>),
     Toggle(String),
+    Command(String, String),
     Exit,
 }

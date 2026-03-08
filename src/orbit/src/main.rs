@@ -8,13 +8,24 @@ struct Args {
     command: Commands,
 }
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Subcommand, Debug)]
 enum Commands {
     Reload,
     Modules,
+    Commands {
+        #[arg(help = "Module name to inspect; omit to list all module commands")]
+        module: Option<String>,
+    },
     Toggle {
         #[arg(help = "Module name to toggle")]
         module: String,
+    },
+    Command {
+        #[arg(help = "Module name")]
+        module: String,
+        #[arg(help = "Command name")]
+        command: String,
     },
     Exit,
 }
@@ -30,8 +41,10 @@ enum Commands {
 trait Orbit {
     fn alive(&self) -> Result<()>;
     fn reload(&self) -> Result<String>;
+    fn commands(&self, module: &str) -> Result<String>;
     fn modules(&self) -> Result<String>;
     fn toggle(&self, module: &str) -> Result<()>;
+    fn command(&self, module: &str, command: &str) -> Result<()>;
     fn exit(&self) -> Result<()>;
 }
 
@@ -59,9 +72,18 @@ fn main() {
             Ok(m) => println!("{m}"),
             Err(e) => eprintln!("Modules failed: {e}"),
         },
+        Commands::Commands { module } => match proxy.commands(module.as_deref().unwrap_or("")) {
+            Ok(m) => println!("{m}"),
+            Err(e) => eprintln!("Commands failed: {e}"),
+        },
         Commands::Toggle { module } => {
             if let Err(e) = proxy.toggle(&module) {
                 eprintln!("Toggle failed: {e}");
+            }
+        }
+        Commands::Command { module, command } => {
+            if let Err(e) = proxy.command(&module, &command) {
+                eprintln!("Command failed: {e}");
             }
         }
         Commands::Exit => {

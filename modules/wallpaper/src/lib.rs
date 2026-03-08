@@ -337,7 +337,7 @@ orbit_plugin! {
     module = Wallpaper,
     manifest = {
         name: "wallpaper",
-        commands: ["next"],
+        commands: [("next", Msg::Cycle)],
         options: Options::Layer(LayerOptions {
             layer: Layer::Background,
             size: Size::new(0, 0),

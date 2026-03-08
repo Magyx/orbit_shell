@@ -37,6 +37,7 @@ pub trait OrbitModuleDyn: 'static {
         orbit: &OrbitCtl,
     ) -> bool;
     fn view(&self, tid: &TargetId) -> Element<ErasedMsg>;
+    fn command_message(&self, command: &str) -> Option<ErasedMsg>;
 
     fn subscriptions(&self) -> Subscription<ErasedMsg>;
 }

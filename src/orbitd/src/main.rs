@@ -445,6 +445,50 @@ impl<'a> Orbit<'a> {
         }
     }
 
+    fn format_commands(&self, module_name: &str) -> String {
+        fn push_commands(reply: &mut String, module: &ModuleInfo, depth: usize) {
+            if module.is_loaded() {
+                let indent = "\t".repeat(depth);
+                let sub_indent = "\t".repeat(depth + 1);
+
+                writeln!(reply, "{}{}:", indent, module.name).unwrap();
+
+                let commands = module.as_ref().manifest().commands;
+                if commands.is_empty() {
+                    writeln!(reply, "{}(no commands)", sub_indent).unwrap();
+                    return;
+                }
+
+                for command in commands {
+                    writeln!(reply, "{}{command}", sub_indent).unwrap();
+                }
+            }
+        }
+
+        let mut reply = String::new();
+
+        if module_name.is_empty() {
+            reply.push_str("Commands:\n");
+
+            let mut modules = self.modules.iter().collect::<Vec<_>>();
+            modules.sort_by(|a, b| a.1.name.cmp(&b.1.name));
+
+            for (_, module) in modules {
+                push_commands(&mut reply, module, 1);
+            }
+        } else if let Some((_, module)) = self
+            .modules
+            .iter()
+            .find(|(_, module)| module.name == module_name)
+        {
+            push_commands(&mut reply, module, 0);
+        } else {
+            writeln!(reply, "Unknown module: {module_name}").unwrap();
+        }
+
+        reply
+    }
+
     fn run(&mut self) {
         self.d_server.start();
         self.config_watcher.start(&self.config_path);
@@ -684,6 +728,9 @@ impl<'a> Orbit<'a> {
 
                             let _ = resp_tx.send(reply);
                         }
+                        DbusEvent::Commands(module_name, resp_tx) => {
+                            let _ = resp_tx.send(self.format_commands(&module_name));
+                        }
                         DbusEvent::Toggle(module_name) => {
                             let Some(&mid) = self
                                 .modules
@@ -711,6 +758,27 @@ impl<'a> Orbit<'a> {
                                 self.config = config;
                             }
                             self.modules.insert(mid, module);
+                        }
+                        DbusEvent::Command(module_name, command_name) => {
+                            let Some((&mid, module)) = self
+                                .modules
+                                .iter()
+                                .find(|(_, m)| m.name == module_name && m.is_loaded())
+                            else {
+                                tracing::warn!(module = %module_name, command = %command_name, "command for unknown module");
+                                continue;
+                            };
+
+                            let Some(message) = module.as_ref().command_message(&command_name)
+                            else {
+                                tracing::warn!(module = %module_name, command = %command_name, "unknown module command");
+                                continue;
+                            };
+
+                            let _ = tx.send(Event::Ui(event::Ui::Module(
+                                mid,
+                                SctkEvent::message(message),
+                            )));
                         }
                         DbusEvent::Exit => {
                             orbit_loop.close_orbit();

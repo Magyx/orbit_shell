@@ -23,14 +23,14 @@ macro_rules! orbit_plugin {
         module = $ty:ty,
         manifest = {
             name: $name:expr,
-            commands: [$($cmd:expr),* $(,)?],
+            commands: [$(($cmd_name:expr, $cmd_msg:expr)),* $(,)?],
             options: $options:expr,
         },
     ) => {
         orbit_plugin!(@impl
             module = $ty,
             name = $name,
-            commands = [$($cmd),*],
+            commands = [$(($cmd_name, $cmd_msg)),*],
             options = $options,
             show_on_startup = true,
             pipelines = vec![]
@@ -41,7 +41,7 @@ macro_rules! orbit_plugin {
         module = $ty:ty,
         manifest = {
             name: $name:expr,
-            commands: [$($cmd:expr),* $(,)?],
+            commands: [$(($cmd_name:expr, $cmd_msg:expr)),* $(,)?],
             options: $options:expr,
         },
         pipelines = $pipelines:expr,
@@ -49,7 +49,7 @@ macro_rules! orbit_plugin {
         orbit_plugin!(@impl
             module = $ty,
             name = $name,
-            commands = [$($cmd),*],
+            commands = [$(($cmd_name, $cmd_msg)),*],
             options = $options,
             show_on_startup = true,
             pipelines = $pipelines
@@ -97,7 +97,7 @@ macro_rules! orbit_plugin {
         module = $ty:ty,
         manifest = {
             name: $name:expr,
-            commands: [$($cmd:expr),* $(,)?],
+            commands: [$(($cmd_name:expr, $cmd_msg:expr)),* $(,)?],
             options: $options:expr,
             show_on_startup: $show:expr,
         },
@@ -105,7 +105,7 @@ macro_rules! orbit_plugin {
         orbit_plugin!(@impl
             module = $ty,
             name = $name,
-            commands = [$($cmd),*],
+            commands = [$(($cmd_name, $cmd_msg)),*],
             options = $options,
             show_on_startup = $show,
             pipelines = vec![]
@@ -116,7 +116,7 @@ macro_rules! orbit_plugin {
         module = $ty:ty,
         manifest = {
             name: $name:expr,
-            commands: [$($cmd:expr),* $(,)?],
+            commands: [$(($cmd_name:expr, $cmd_msg:expr)),* $(,)?],
             options: $options:expr,
             show_on_startup: $show:expr,
         },
@@ -125,7 +125,7 @@ macro_rules! orbit_plugin {
         orbit_plugin!(@impl
             module = $ty,
             name = $name,
-            commands = [$($cmd),*],
+            commands = [$(($cmd_name, $cmd_msg)),*],
             options = $options,
             show_on_startup = $show,
             pipelines = $pipelines
@@ -135,7 +135,7 @@ macro_rules! orbit_plugin {
     (@impl
         module = $ty:ty,
         name = $name:expr,
-        commands = [$($cmd:expr),*],
+        commands = [$(($cmd_name:expr, $cmd_msg:expr)),*],
         options = $options:expr,
         show_on_startup = $show:expr,
         pipelines = $pipelines:expr
@@ -271,8 +271,16 @@ macro_rules! orbit_plugin {
                 let typed = < $ty as $crate::OrbitModule >::view(self.inner_ref(), tid);
                 $crate::runtime::erased::erase_element(typed)
             }
+            fn command_message(&self, command: &str) -> ::std::option::Option<$crate::ErasedMsg> {
+                match command {
+                    $(
+                        $cmd_name => ::std::option::Option::Some($crate::ErasedMsg::new($cmd_msg)),
+                    )*
+                    _ => ::std::option::Option::None,
+                }
+            }
             fn subscriptions(&self) -> $crate::Subscription<$crate::ErasedMsg> {
-                fn map_sub<M: Send + Clone + ::std::fmt::Debug + 'static>(s: $crate::Subscription<M>) -> $crate::Subscription<$crate::ErasedMsg> {
+                fn map_sub<M: Send + ::std::fmt::Debug + Clone + 'static>(s: $crate::Subscription<M>) -> $crate::Subscription<$crate::ErasedMsg> {
                     use $crate::Subscription::*;
                     match s {
                         None => None,
@@ -290,7 +298,7 @@ macro_rules! orbit_plugin {
             let wrapper = __Wrapper {
                 manifest: $crate::runtime::Manifest {
                     name: $name,
-                    commands: &[$($cmd),*],
+                    commands: &[$($cmd_name),*],
                     options: $options,
                     show_on_startup: $show,
                 },

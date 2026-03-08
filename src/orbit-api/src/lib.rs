@@ -1,4 +1,4 @@
-use std::{fmt::Debug, sync::atomic::AtomicBool, time::Duration};
+use std::{fmt, sync::atomic::AtomicBool, time::Duration};
 
 use serde::{Serialize, de::DeserializeOwned};
 use ui::{sctk::SctkEvent, widget::Element};
@@ -54,9 +54,14 @@ impl OrbitCtl {
     }
 }
 
-#[derive(Debug)]
 pub struct ErasedMsg {
     pub(crate) inner: Box<dyn crate::runtime::erased::DynMsg>,
+}
+
+impl fmt::Debug for ErasedMsg {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("ErasedMsg(..)")
+    }
 }
 
 pub type Engine<'a> = ui::graphics::Engine<'a, ErasedMsg>;
