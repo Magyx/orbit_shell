@@ -24,7 +24,6 @@ mod config;
 
 #[derive(Clone, Debug)]
 pub enum Msg {
-    None,
     Tick,
     Cycle,
 }
@@ -38,8 +37,8 @@ pub struct PerTarget {
 
 #[derive(Default, Debug)]
 pub struct Wallpaper {
-    targets: HashMap<TargetId, PerTarget>,
     cfg: Config,
+    targets: HashMap<TargetId, PerTarget>,
 }
 
 impl Wallpaper {
@@ -166,17 +165,15 @@ impl Wallpaper {
         })
     }
 
-    fn place_widget<E>(&self, tid: &TargetId, element: E, x: f32, y: f32, on: &mut Overlay<Msg>)
+    fn place_widget<E>(&self, target: &PerTarget, element: E, x: f32, y: f32, on: &mut Overlay<Msg>)
     where
         E: Into<Element<Msg>>,
     {
-        if let Some(PerTarget { size, .. }) = self.targets.get(tid) {
-            on.push(
-                element,
-                (size.width as f32 * x.clamp(0.0, 1.0)).ceil() as i32,
-                (size.height as f32 * y.clamp(0.0, 1.0)).ceil() as i32,
-            );
-        }
+        on.push(
+            element,
+            (target.size.width as f32 * x.clamp(0.0, 1.0)).ceil() as i32,
+            (target.size.height as f32 * y.clamp(0.0, 1.0)).ceil() as i32,
+        );
     }
 }
 
@@ -255,17 +252,19 @@ impl OrbitModule for Wallpaper {
                     }
                 }
             }
-            Event::Message(Msg::Cycle) => {
-                if let Some(target) = self.targets.remove(&tid) {
-                    engine.unload_texture(target.tex);
-                    needs_redraw |= self.ensure_texture_loaded(&tid, engine);
+            Event::Message(msg) => match msg {
+                Msg::Tick => {
+                    if self.any_clock() {
+                        needs_redraw = true;
+                    }
                 }
-            }
-            Event::Message(Msg::Tick) => {
-                if self.any_clock() {
-                    needs_redraw = true;
+                Msg::Cycle => {
+                    if let Some(target) = self.targets.remove(&tid) {
+                        engine.unload_texture(target.tex);
+                        needs_redraw |= self.ensure_texture_loaded(&tid, engine);
+                    }
                 }
-            }
+            },
             _ => {}
         }
 
@@ -294,7 +293,7 @@ impl OrbitModule for Wallpaper {
                 } => {
                     let time = chrono::Local::now().format(time_format).to_string();
                     let text = Text::new(time, *font_size);
-                    self.place_widget(tid, text, *x, *y, &mut view);
+                    self.place_widget(target, text, *x, *y, &mut view);
                 }
             }
         }
