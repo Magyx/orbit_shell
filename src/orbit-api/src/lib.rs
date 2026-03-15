@@ -1,4 +1,4 @@
-use std::{fmt, sync::atomic::AtomicBool, time::Duration};
+use std::{fmt, pin::Pin, time::Duration};
 
 use serde::{Serialize, de::DeserializeOwned};
 use ui::{sctk::SctkEvent, widget::Element};
@@ -14,45 +14,8 @@ pub use serde_yml;
 
 mod macros;
 
-#[derive(Debug)]
-pub struct OrbitCtl {
-    exit_orbit: AtomicBool,
-    exit_module: AtomicBool,
-}
-
-impl Default for OrbitCtl {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl OrbitCtl {
-    pub fn close_orbit(&self) {
-        self.exit_orbit
-            .store(true, std::sync::atomic::Ordering::Relaxed);
-    }
-    pub fn close_module(&self) {
-        self.exit_module
-            .store(true, std::sync::atomic::Ordering::Relaxed)
-    }
-
-    #[cfg(feature = "host")]
-    pub fn new() -> Self {
-        Self {
-            exit_orbit: AtomicBool::new(false),
-            exit_module: AtomicBool::new(false),
-        }
-    }
-    #[cfg(feature = "host")]
-    pub fn take_close_orbit(&self) -> bool {
-        self.exit_orbit.load(std::sync::atomic::Ordering::Relaxed)
-    }
-    #[cfg(feature = "host")]
-    pub fn take_close_module(&self) -> bool {
-        self.exit_module
-            .swap(false, std::sync::atomic::Ordering::Relaxed)
-    }
-}
+pub type Event<M> = ui::event::Event<M, SctkEvent>;
+pub type Engine<'a> = ui::graphics::Engine<'a, ErasedMsg>;
 
 pub struct ErasedMsg {
     pub(crate) inner: Box<dyn crate::runtime::erased::DynMsg>,
@@ -64,7 +27,31 @@ impl fmt::Debug for ErasedMsg {
     }
 }
 
-pub type Engine<'a> = ui::graphics::Engine<'a, ErasedMsg>;
+pub type BoxFuture<M> = Pin<Box<dyn Future<Output = M> + Send + 'static>>;
+
+pub enum Task<M: Send + 'static> {
+    None,
+    Batch(Vec<Task<M>>),
+
+    RedrawTarget,
+    RedrawModule,
+    ExitModule,
+    ExitOrbit,
+
+    Spawn(BoxFuture<M>),
+}
+
+impl<M: Send + 'static> Task<M> {
+    pub fn batch(tasks: impl IntoIterator<Item = Task<M>>) -> Self {
+        Self::Batch(tasks.into_iter().collect())
+    }
+    pub fn spawn<F>(fut: F) -> Self
+    where
+        F: Future<Output = M> + Send + 'static,
+    {
+        Self::Spawn(Box::pin(fut))
+    }
+}
 
 // TODO: add from stream/async
 #[derive(Clone)]
@@ -74,8 +61,6 @@ pub enum Subscription<M: Send + 'static> {
     Interval { every: Duration, message: M },
     Timeout { after: Duration, message: M },
 }
-
-pub type Event<M> = ui::event::Event<M, SctkEvent>;
 
 pub trait OrbitModule: Default + 'static {
     type Config: Serialize + DeserializeOwned + Default;
@@ -110,13 +95,11 @@ pub trait OrbitModule: Default + 'static {
         tid: ui::graphics::TargetId,
         engine: &mut Engine<'a>,
         event: &Event<Self::Message>,
-        orbit: &OrbitCtl,
-    ) -> bool {
+    ) -> Task<Self::Message> {
         _ = tid;
         _ = engine;
         _ = event;
-        _ = orbit;
-        false
+        Task::None
     }
     fn view(&self, tid: &ui::graphics::TargetId) -> Element<Self::Message>;
 

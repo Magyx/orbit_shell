@@ -9,6 +9,7 @@ use std::{
 
 use calloop::{
     EventLoop, LoopHandle, RegistrationToken, channel as loop_channel,
+    futures::{Scheduler, executor},
     timer::{TimeoutAction, Timer},
 };
 use serde_yml::Value;
@@ -19,10 +20,11 @@ use ui::{
     sctk::{SctkEvent, SurfaceId, state::SctkState},
 };
 
-use orbit_api::{Engine, ErasedMsg, OrbitCtl};
+use orbit_api::{Engine, ErasedMsg};
 use orbit_dbus::DbusEvent;
 
 use crate::{
+    api_utils::UnraveledTask,
     config::{Config, ConfigEvent, ConfigInstruction, ConfigWatcher, compare_configs},
     module::ModuleInfo,
     sctk::{CreatedSurface, SctkApp},
@@ -30,6 +32,7 @@ use crate::{
 
 use {dbus::OrbitdServer, event::Event, module::ModuleId};
 
+mod api_utils;
 mod config;
 mod dbus;
 mod dialog;
@@ -216,7 +219,7 @@ impl<'a> Orbit<'a> {
         ) {
             use orbit_api::Subscription::*;
             match s {
-                None => {}
+                None => (),
                 Batch(v) => {
                     for child in v {
                         flatten_subs(child, out);
@@ -225,6 +228,7 @@ impl<'a> Orbit<'a> {
                 other => out.push(other),
             }
         }
+
         let mut subs = Vec::new();
         flatten_subs(module.as_ref().subscriptions(), &mut subs);
 
@@ -272,7 +276,7 @@ impl<'a> Orbit<'a> {
             }
         }
         if !tokens.is_empty() {
-            self.subs.insert(*mid, tokens);
+            self.subs.entry(*mid).or_default().append(&mut tokens);
         }
     }
 
@@ -378,26 +382,72 @@ impl<'a> Orbit<'a> {
         self.sctk.destroy_surfaces(&sids);
     }
 
+    fn do_update(
+        engine: &mut Engine,
+        event: &orbit_api::Event<ErasedMsg>,
+        (module, task): &mut (&mut ModuleInfo, &mut Option<UnraveledTask>),
+        tid: &TargetId,
+    ) -> bool {
+        let (ut, redraw) = api_utils::unravel_task(module.as_mut().update(*tid, engine, event));
+        **task = Some(ut);
+        redraw
+    }
+
+    fn handle_task(
+        mut utask: Option<UnraveledTask>,
+        mid: &ModuleId,
+        module: &ModuleInfo,
+        tx: &mpsc::Sender<Event>,
+        task_scheduler: &Scheduler<(ModuleId, ErasedMsg)>,
+    ) {
+        if let Some(ut) = utask.as_mut() {
+            match ut.action() {
+                api_utils::Action::ExitOrbit => {
+                    _ = tx.send(Event::Dbus(DbusEvent::Exit));
+                    return;
+                }
+                api_utils::Action::ExitModule => {
+                    _ = tx.send(Event::Dbus(DbusEvent::Toggle(module.name.clone())));
+                    return;
+                }
+                api_utils::Action::RedrawModule => {
+                    _ = tx.send(Event::Ui(event::Ui::ForceRedraw(*mid)));
+                }
+                api_utils::Action::None => (),
+            }
+
+            if let Some(pending) = ut.tasks.take() {
+                for task in pending {
+                    let mid = *mid;
+                    let fut = async move {
+                        let msg = task.await.clone_for_send();
+                        (mid, msg)
+                    };
+                    let _ = task_scheduler.schedule(fut);
+                }
+            }
+        }
+    }
+
     fn handle_sctk_event(
         engine: &mut Engine,
         modules: &mut HashMap<ModuleId, ModuleInfo>,
-        orbit_loop: &OrbitCtl,
         event: &SctkEvent,
         mid: &ModuleId,
         tid: &TargetId,
         tx: &mpsc::Sender<Event>,
+        task_scheduler: &Scheduler<(ModuleId, ErasedMsg)>,
     ) {
         if let Some(module) = modules.get_mut(mid) {
+            let mut task = None;
             engine.handle_platform_event(
                 tid,
                 event,
-                &mut |eng, e, s: &mut ModuleInfo, ctl| s.as_mut().update(*tid, eng, e, ctl),
-                module,
-                orbit_loop,
+                &mut Self::do_update,
+                &mut (module, &mut task),
+                tid,
             );
-            if orbit_loop.take_close_module() {
-                _ = tx.send(Event::Dbus(DbusEvent::Toggle(module.name.clone())));
-            }
+            Self::handle_task(task, mid, module, tx, task_scheduler);
         }
     }
 
@@ -407,18 +457,19 @@ impl<'a> Orbit<'a> {
         engine: &mut Engine,
         modules: &mut HashMap<ModuleId, ModuleInfo>,
         sctk: &mut SctkApp,
-        orbit_loop: &OrbitCtl,
         mid: &ModuleId,
         sid: &SurfaceId,
         tid: &TargetId,
         poll_override: bool,
         tx: &mpsc::Sender<Event>,
+        task_scheduler: &Scheduler<(ModuleId, ErasedMsg)>,
     ) {
         if let Some(module) = modules.get_mut(mid) {
             if !sctk.state.surfaces.contains_key(sid) {
                 return;
             }
 
+            let mut task = None;
             let need = sctk
                 .state
                 .surfaces
@@ -426,22 +477,14 @@ impl<'a> Orbit<'a> {
                 .map(|s| s.configured)
                 .unwrap_or(false)
                 && (poll_override
-                    || engine.poll(
-                        tid,
-                        &mut |eng, e, s: &mut ModuleInfo, ctl| s.as_mut().update(*tid, eng, e, ctl),
-                        module,
-                        orbit_loop,
-                    ));
+                    || engine.poll(tid, &mut Self::do_update, &mut (module, &mut task), tid));
             engine.render_if_needed(
                 tid,
                 need,
                 &|tid, s: &ModuleInfo| s.as_ref().view(tid),
                 module,
             );
-
-            if orbit_loop.take_close_module() {
-                _ = tx.send(Event::Dbus(DbusEvent::Toggle(module.name.clone())));
-            }
+            Self::handle_task(task, mid, module, tx, task_scheduler);
         }
     }
 
@@ -494,14 +537,13 @@ impl<'a> Orbit<'a> {
         self.config_watcher.start(&self.config_path);
 
         let tx = self.tx.clone();
-        let orbit_loop = OrbitCtl::new();
         let mut event_loop: EventLoop<SctkState> = EventLoop::try_new().expect("err");
         let _ = WaylandSource::new(self.sctk.conn.clone(), self.sctk.take_event_queue())
             .insert(event_loop.handle());
 
         let _ = event_loop.handle().insert_source(
             self.sctk_rx.take().expect("sctk_rx already taken"),
-            |evt, _meta, _state| {
+            |evt, _, _| {
                 if let loop_channel::Event::Msg(e) = evt {
                     let _ = tx.send(Event::Ui(event::Ui::Sctk(e)));
                 }
@@ -509,7 +551,7 @@ impl<'a> Orbit<'a> {
         );
         let _ = event_loop.handle().insert_source(
             self.dbus_rx.take().expect("dbus_rx already taken"),
-            |evt, _meta, _state| {
+            |evt, _, _| {
                 if let loop_channel::Event::Msg(e) = evt {
                     let _ = tx.send(Event::Dbus(e));
                 }
@@ -517,12 +559,26 @@ impl<'a> Orbit<'a> {
         );
         let _ = event_loop.handle().insert_source(
             self.config_rx.take().expect("config_rx already taken"),
-            |evt, _meta, _state| {
+            |evt, _, _| {
                 if let loop_channel::Event::Msg(e) = evt {
                     let _ = tx.send(Event::Config(e));
                 }
             },
         );
+
+        let task_scheduler = {
+            let tx = tx.clone();
+            let (task_exec, task_scheduler) =
+                executor::<(ModuleId, ErasedMsg)>().expect("create task executor");
+
+            let _ = event_loop
+                .handle()
+                .insert_source(task_exec, move |(mid, msg), _, _| {
+                    _ = tx.send(Event::Ui(event::Ui::Module(mid, SctkEvent::message(msg))));
+                });
+
+            task_scheduler
+        };
 
         {
             let config = std::mem::take(&mut self.config);
@@ -532,7 +588,8 @@ impl<'a> Orbit<'a> {
             self.modules = modules;
         }
 
-        while !orbit_loop.take_close_orbit() {
+        let mut orbit_closed = false;
+        while !orbit_closed {
             _ = event_loop.dispatch(None, &mut self.sctk.state);
 
             let mut need_tick = false;
@@ -586,11 +643,11 @@ impl<'a> Orbit<'a> {
                                         Self::handle_sctk_event(
                                             &mut self.engine,
                                             &mut self.modules,
-                                            &orbit_loop,
                                             &sctk_event,
                                             mid,
                                             tid,
                                             &tx,
+                                            &task_scheduler,
                                         );
                                     } else if !self.error_dialog.is_empty() {
                                         for (tid, _) in
@@ -601,7 +658,7 @@ impl<'a> Orbit<'a> {
                                                 &sctk_event,
                                                 &mut |_, _, _, _| false,
                                                 &mut (),
-                                                &orbit_loop,
+                                                &(),
                                             );
                                         }
                                     }
@@ -610,11 +667,11 @@ impl<'a> Orbit<'a> {
                                         Self::handle_sctk_event(
                                             &mut self.engine,
                                             &mut self.modules,
-                                            &orbit_loop,
                                             &sctk_event,
                                             mid,
                                             tid,
                                             &tx,
+                                            &task_scheduler,
                                         );
                                     }
                                 }
@@ -628,11 +685,11 @@ impl<'a> Orbit<'a> {
                                         Self::handle_sctk_event(
                                             &mut self.engine,
                                             &mut self.modules,
-                                            &orbit_loop,
                                             &event,
                                             &mid,
                                             tid,
                                             &tx,
+                                            &task_scheduler,
                                         );
                                     }
                                 } else {
@@ -640,11 +697,11 @@ impl<'a> Orbit<'a> {
                                         Self::handle_sctk_event(
                                             &mut self.engine,
                                             &mut self.modules,
-                                            &orbit_loop,
                                             &sctk_event,
                                             &mid,
                                             tid,
                                             &tx,
+                                            &task_scheduler,
                                         );
                                     }
                                 }
@@ -661,12 +718,12 @@ impl<'a> Orbit<'a> {
                                         &mut self.engine,
                                         &mut self.modules,
                                         &mut self.sctk,
-                                        &orbit_loop,
                                         &mid,
                                         sid,
                                         tid,
                                         true,
                                         &tx,
+                                        &task_scheduler,
                                     );
                                 }
                             }
@@ -781,7 +838,7 @@ impl<'a> Orbit<'a> {
                             )));
                         }
                         DbusEvent::Exit => {
-                            orbit_loop.close_orbit();
+                            orbit_closed = true;
                             event_loop.get_signal().stop();
                         }
                     },
@@ -916,12 +973,12 @@ impl<'a> Orbit<'a> {
                             &mut self.engine,
                             &mut self.modules,
                             &mut self.sctk,
-                            &orbit_loop,
                             mid,
                             sid,
                             tid,
                             false,
                             &tx,
+                            &task_scheduler,
                         );
                     }
                 }
@@ -930,7 +987,7 @@ impl<'a> Orbit<'a> {
                         tid,
                         &mut |_, _: &ui::event::Event<ErasedMsg, SctkEvent>, (), _| false,
                         &mut (),
-                        &orbit_loop,
+                        &(),
                     );
                     self.engine
                         .render_if_needed(tid, need, &dialog::error_view, &mut self.errors);

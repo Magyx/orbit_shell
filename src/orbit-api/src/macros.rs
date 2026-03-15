@@ -141,7 +141,7 @@ macro_rules! orbit_plugin {
         pipelines = $pipelines:expr
     ) => {
         use $crate::{serde, serde_yml::{self, Value}};
-        use orbit_api::{ErasedMsg as __ErasedMsg, Event as __Event, ui::{graphics::{Engine as __Engine, TargetId as __TargetId}, render::pipeline::Pipeline as __Pipeline}};
+        use orbit_api::{Subscription as __Sub, Task as __Task, ErasedMsg as __ErasedMsg, Event as __Event, ui::{graphics::{Engine as __Engine, TargetId as __TargetId}, render::pipeline::Pipeline as __Pipeline}};
 
         struct __Wrapper {
             manifest: $crate::runtime::Manifest,
@@ -188,6 +188,57 @@ macro_rules! orbit_plugin {
                 ).expect("serialize default config");
 
                 merge(defaults, raw)
+            }
+            fn map_event<M: Send + Clone + 'static>(event: &__Event<__ErasedMsg>) -> Option<__Event<M>> {
+                match event {
+                    __Event::RedrawRequested => Some(__Event::RedrawRequested),
+                    __Event::Resized { size } => Some(__Event::Resized { size: *size }),
+
+                    __Event::CursorMoved { position } => Some(__Event::CursorMoved { position: *position }),
+                    __Event::MouseInput { button, state } => Some(__Event::MouseInput {
+                        button: *button,
+                        state: *state
+                    }),
+                    __Event::MouseWheel(d) => Some(__Event::MouseWheel(*d)),
+
+                    __Event::Key(k) => Some(__Event::Key(k.clone())),
+                    __Event::Text(t) => Some(__Event::Text(t.clone())),
+                    __Event::ModifiersChanged(m) => Some(__Event::ModifiersChanged(*m)),
+                    __Event::Platform(e) => Some(__Event::Platform(e.clone())),
+
+                    __Event::Message(erased_msg) => {
+                        erased_msg.message::<M>().map(__Event::Message)
+                    }
+                }
+            }
+            fn map_sub<M: Send + Clone + 'static>(sub: __Sub<M>) -> __Sub<$crate::ErasedMsg> {
+                use __Sub::*;
+                match sub {
+                    None => None,
+                    Interval { every, message } => Interval { every, message: $crate::ErasedMsg::new(message) },
+                    Timeout  { after, message } => Timeout  { after, message: $crate::ErasedMsg::new(message) },
+                    Batch(v) => Batch(v.into_iter().map(Self::map_sub).collect()),
+                }
+            }
+            fn map_task<M: Send + Clone + 'static>(task: __Task<M>) -> __Task<$crate::ErasedMsg> {
+                use __Task::*;
+                match task {
+                    None => None,
+                    Batch(v) => {
+                        Batch(v.into_iter().map(Self::map_task).collect())
+                    }
+                    Spawn(fut) => {
+                        let fut = async move {
+                            let msg = fut.await;
+                            $crate::ErasedMsg::new(msg)
+                        };
+                        __Task::spawn(fut)
+                    }
+                    RedrawTarget => RedrawTarget,
+                    RedrawModule => RedrawModule,
+                    ExitModule => ExitModule,
+                    ExitOrbit => ExitOrbit,
+                }
             }
         }
 
@@ -238,33 +289,12 @@ macro_rules! orbit_plugin {
                 tid: __TargetId,
                 engine: &mut __Engine<'a, __ErasedMsg>,
                 event: &__Event<__ErasedMsg>,
-                orbit: &$crate::OrbitCtl,
-            ) -> bool {
+            ) -> __Task<__ErasedMsg> {
                 type __Msg = < $ty as $crate::OrbitModule >::Message;
 
-                let mapped: ::std::option::Option<$crate::Event<__Msg>> = match event {
-                    $crate::Event::RedrawRequested => Some($crate::Event::RedrawRequested),
-                    $crate::Event::Resized { size } => Some($crate::Event::Resized { size: *size }),
-                    $crate::Event::CursorMoved { position } => {
-                        Some($crate::Event::CursorMoved { position: *position })
-                    }
-                    $crate::Event::MouseInput { button, state } => {
-                        Some($crate::Event::MouseInput { button: *button, state: *state })
-                    }
-                    $crate::Event::MouseWheel(d) => Some($crate::Event::MouseWheel(*d)),
-
-                    $crate::Event::Key(k) => Some($crate::Event::Key(k.clone())),
-                    $crate::Event::Text(t) => Some($crate::Event::Text(t.clone())),
-                    $crate::Event::ModifiersChanged(m) => Some($crate::Event::ModifiersChanged(*m)),
-
-                    $crate::Event::Platform(e) => Some($crate::Event::Platform(e.clone())),
-                    $crate::Event::Message(m) => m.message::<__Msg>().map($crate::Event::Message),
-                };
-
-                if let Some(evt) = mapped.as_ref() {
-                    < $ty as $crate::OrbitModule >::update(self.inner_mut(), tid, engine, evt, orbit)
-                } else {
-                    false
+                match Self::map_event(event) {
+                    Some(e) => Self::map_task(< $ty as $crate::OrbitModule >::update(self.inner_mut(), tid, engine, &e)),
+                    _ => __Task::None
                 }
             }
             fn view(&self, tid: &$crate::ui::graphics::TargetId) -> $crate::ui::widget::Element<$crate::ErasedMsg> {
@@ -279,17 +309,8 @@ macro_rules! orbit_plugin {
                     _ => ::std::option::Option::None,
                 }
             }
-            fn subscriptions(&self) -> $crate::Subscription<$crate::ErasedMsg> {
-                fn map_sub<M: Send + ::std::fmt::Debug + Clone + 'static>(s: $crate::Subscription<M>) -> $crate::Subscription<$crate::ErasedMsg> {
-                    use $crate::Subscription::*;
-                    match s {
-                        None => None,
-                        Interval { every, message } => Interval { every, message: $crate::ErasedMsg::new(message) },
-                        Timeout  { after, message } => Timeout  { after, message: $crate::ErasedMsg::new(message) },
-                        Batch(v) => Batch(v.into_iter().map(map_sub).collect()),
-                    }
-                }
-                map_sub::<<$ty as $crate::OrbitModule>::Message>(<$ty as $crate::OrbitModule>::subscriptions(self.inner_ref()))
+            fn subscriptions(&self) -> __Sub<$crate::ErasedMsg> {
+                Self::map_sub::<<$ty as $crate::OrbitModule>::Message>(<$ty as $crate::OrbitModule>::subscriptions(self.inner_ref()))
             }
         }
 

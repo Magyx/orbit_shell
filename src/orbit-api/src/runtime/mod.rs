@@ -4,7 +4,7 @@ use ui::{
     widget::Element,
 };
 
-use crate::{ErasedMsg, Event, OrbitCtl, Subscription};
+use crate::{ErasedMsg, Event, Subscription, Task};
 
 pub mod erased;
 
@@ -34,8 +34,7 @@ pub trait OrbitModuleDyn: 'static {
         tid: TargetId,
         engine: &mut Engine<'a, ErasedMsg>,
         event: &Event<ErasedMsg>,
-        orbit: &OrbitCtl,
-    ) -> bool;
+    ) -> Task<ErasedMsg>;
     fn view(&self, tid: &TargetId) -> Element<ErasedMsg>;
     fn command_message(&self, command: &str) -> Option<ErasedMsg>;
 

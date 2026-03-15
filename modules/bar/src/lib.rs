@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use orbit_api::{
-    Engine, Event, OrbitCtl, OrbitModule, Subscription, orbit_plugin,
+    Engine, Event, OrbitModule, Subscription, Task, orbit_plugin,
     ui::{
         el,
         graphics::TargetId,
@@ -88,13 +88,13 @@ impl OrbitModule for Bar {
         _tid: TargetId,
         _engine: &mut Engine<'a>,
         event: &Event<Self::Message>,
-        _orbit: &OrbitCtl,
-    ) -> bool {
+    ) -> Task<Msg> {
         if let Event::Message(Msg::Tick) = event {
             self.now = chrono::Local::now();
-            return true;
+            Task::RedrawTarget
+        } else {
+            Task::None
         }
-        false
     }
 
     fn view(&self, _tid: &TargetId) -> Element<Self::Message> {

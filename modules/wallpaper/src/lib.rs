@@ -7,7 +7,7 @@ use std::{
 };
 
 use orbit_api::{
-    Engine, Event, OrbitCtl, OrbitModule, Subscription, orbit_plugin,
+    Engine, Event, OrbitModule, Subscription, Task, orbit_plugin,
     ui::{
         el,
         graphics::TargetId,
@@ -233,8 +233,7 @@ impl OrbitModule for Wallpaper {
         tid: TargetId,
         engine: &mut Engine<'a>,
         event: &Event<Self::Message>,
-        _orbit: &OrbitCtl,
-    ) -> bool {
+    ) -> Task<Msg> {
         let mut needs_redraw = self.ensure_texture_loaded(&tid, engine);
 
         match event {
@@ -268,7 +267,11 @@ impl OrbitModule for Wallpaper {
             _ => {}
         }
 
-        needs_redraw
+        if needs_redraw {
+            Task::RedrawTarget
+        } else {
+            Task::None
+        }
     }
 
     fn view(&self, tid: &TargetId) -> Element<Self::Message> {
