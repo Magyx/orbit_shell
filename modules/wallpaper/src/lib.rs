@@ -240,15 +240,13 @@ impl OrbitModule for Wallpaper {
             &Event::Resized { size } => {
                 if let Some(target) = self.targets.get_mut(&tid)
                     && target.size != size
-                {
-                    engine.unload_texture(target.tex);
-                    if let Some(handle) =
+                    && let Some(handle) =
                         Self::load_texture(&target.file, size.width, size.height, engine)
-                    {
-                        target.tex = handle;
-                        target.size = size;
-                        needs_redraw = true;
-                    }
+                {
+                    let old = std::mem::replace(&mut target.tex, handle);
+                    target.size = size;
+                    engine.unload_texture(old);
+                    needs_redraw = true;
                 }
             }
             Event::Message(msg) => match msg {
