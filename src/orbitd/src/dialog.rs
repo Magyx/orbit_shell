@@ -1,15 +1,18 @@
-use orbit_api::ErasedMsg;
+use orbit_api::{Engine, ErasedMsg};
 use ui::{
     el,
     graphics::TargetId,
     model::{Color, Size, Vec4},
-    sctk::{Anchor, KeyboardInteractivity, Layer, LayerOptions, Options, OutputSet},
+    sctk::{
+        Anchor, KeyboardInteractivity, Layer, LayerOptions, Options, OutputSet, SctkEvent,
+        SurfaceId,
+    },
     widget::{Column, Element, Length, Scrollable, Text},
 };
 
-use crate::{Orbit, sctk::CreatedSurface};
+use crate::sctk::{CreatedSurface, SctkApp};
 
-pub fn error_view(_tid: &TargetId, errors: &Vec<String>) -> Element<ErasedMsg> {
+pub fn error_view(_: &TargetId, errors: &Vec<String>) -> Element<ErasedMsg> {
     let mut col = Column::new::<Vec<_>, Element<ErasedMsg>>(el!())
         .padding(Vec4::splat(10))
         .size(Size::splat(Length::Grow))
@@ -26,9 +29,24 @@ pub fn error_view(_tid: &TargetId, errors: &Vec<String>) -> Element<ErasedMsg> {
     .into()
 }
 
-impl<'a> Orbit<'a> {
-    pub fn show_error(&mut self, errors: Vec<String>) {
-        if self.error_dialog.is_empty() {
+pub struct ErrorDialog {
+    targets: Vec<(TargetId, SurfaceId)>,
+    errors: Vec<String>,
+}
+
+impl ErrorDialog {
+    pub fn new() -> Self {
+        Self {
+            targets: Vec::new(),
+            errors: Vec::new(),
+        }
+    }
+
+    pub fn is_shown(&self) -> bool {
+        !self.targets.is_empty()
+    }
+    pub fn show(&mut self, engine: &mut Engine<'_>, sctk: &mut SctkApp, errors: Vec<String>) {
+        if self.targets.is_empty() {
             let opts = Options::Layer(LayerOptions {
                 layer: Layer::Top,
                 size: Size::new(0, 64),
@@ -39,23 +57,43 @@ impl<'a> Orbit<'a> {
                 output: Some(OutputSet::All),
             });
 
-            let made = self.sctk.create_surfaces(opts);
+            let made = sctk.create_surfaces(opts);
             for CreatedSurface { sid, handles, size } in made {
-                let tid = self
-                    .engine
-                    .attach_target(std::sync::Arc::new(handles), size);
-                self.error_dialog.push((tid, sid));
+                let tid = engine.attach_target(std::sync::Arc::new(handles), size);
+                self.targets.push((tid, sid));
             }
         }
 
         self.errors = errors;
     }
-
-    pub fn hide_error(&mut self) {
-        for (tid, sid) in self.error_dialog.drain(..) {
-            self.engine.detach_target(&tid);
-            self.sctk.destroy_surfaces(&[sid]);
+    pub fn hide(&mut self, engine: &mut Engine<'_>, sctk: &mut SctkApp) {
+        for (tid, sid) in self.targets.drain(..) {
+            engine.detach_target(&tid);
+            sctk.destroy_surfaces(&[sid]);
         }
         self.errors.clear();
+    }
+
+    pub fn handle_platform_event(&mut self, engine: &mut Engine<'_>, event: &SctkEvent) {
+        if !self.targets.is_empty() {
+            for (tid, _) in self
+                .targets
+                .iter()
+                .filter(|(_, s)| Some(*s) == event.surface_id())
+            {
+                engine.handle_platform_event(tid, event, &mut |_, _, _, _| false, &mut (), &());
+            }
+        }
+    }
+    pub fn render(&mut self, engine: &mut Engine<'_>) {
+        for (tid, _) in self.targets.iter() {
+            let need = engine.poll(
+                tid,
+                &mut |_, _: &ui::event::Event<ErasedMsg, SctkEvent>, (), _| false,
+                &mut (),
+                &(),
+            );
+            engine.render_if_needed(tid, need, &error_view, &mut self.errors);
+        }
     }
 }
