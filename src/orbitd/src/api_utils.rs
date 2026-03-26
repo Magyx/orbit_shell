@@ -1,4 +1,4 @@
-use orbit_api::{BoxFuture, ErasedMsg, Subscription, Task};
+use orbit_api::{BoxFuture, BoxStreamFactory, ErasedMsg, Subscription, Task};
 
 pub enum Action {
     ExitOrbit,
@@ -58,6 +58,7 @@ pub fn unravel_task(t: Task<ErasedMsg>) -> (UnraveledTask, bool) {
 #[derive(Default)]
 pub struct UnraveledSub {
     pub subs: Vec<Subscription<ErasedMsg>>,
+    pub streams: Vec<BoxStreamFactory<ErasedMsg>>,
 }
 
 pub fn unravel_sub(s: orbit_api::Subscription<ErasedMsg>) -> UnraveledSub {
@@ -65,6 +66,9 @@ pub fn unravel_sub(s: orbit_api::Subscription<ErasedMsg>) -> UnraveledSub {
         use orbit_api::Subscription::*;
         match s {
             None => (),
+            Stream(factory) => {
+                us.streams.push(factory);
+            }
             Batch(v) => {
                 for child in v {
                     unravel_sub_internal(child, us);

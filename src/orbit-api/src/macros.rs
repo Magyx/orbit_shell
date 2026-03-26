@@ -218,6 +218,18 @@ macro_rules! orbit_plugin {
                     Interval { every, message } => Interval { every, message: $crate::ErasedMsg::new(message) },
                     Timeout  { after, message } => Timeout  { after, message: $crate::ErasedMsg::new(message) },
                     Batch(v) => Batch(v.into_iter().map(Self::map_sub).collect()),
+                    Stream(typed_factory) => {
+                        Stream(::std::boxed::Box::new(
+                            move |erased_tx: $crate::SubscriptionSender<$crate::ErasedMsg>| {
+                                let typed_tx = $crate::SubscriptionSender::new(
+                                    ::std::sync::Arc::new(move |msg: M| {
+                                        erased_tx.send($crate::ErasedMsg::new(msg))
+                                    }),
+                                );
+                                typed_factory(typed_tx)
+                            },
+                        ))
+                    }
                 }
             }
             fn map_task<M: Send + Clone + 'static>(task: __Task<M>) -> __Task<$crate::ErasedMsg> {

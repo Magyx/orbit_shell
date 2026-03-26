@@ -10,7 +10,7 @@ use calloop::{
     futures::Scheduler,
     timer::{TimeoutAction, Timer},
 };
-use orbit_api::{Engine, ErasedMsg};
+use orbit_api::{Engine, ErasedMsg, SendError, SubscriptionSender};
 use orbit_dbus::DbusEvent;
 use ui::{
     graphics::TargetId,
@@ -28,7 +28,8 @@ use crate::{
 
 pub struct ModuleManager {
     modules: HashMap<ModuleId, ModuleInfo>,
-    subs: HashMap<ModuleId, Vec<RegistrationToken>>,
+    sub_tokens: HashMap<ModuleId, Vec<RegistrationToken>>,
+    stream_tokens: HashMap<ModuleId, Vec<(RegistrationToken, RegistrationToken)>>,
     by_module: HashMap<ModuleId, Vec<TargetId>>,
     by_surface: HashMap<SurfaceId, (TargetId, ModuleId)>,
     by_target: HashMap<TargetId, (SurfaceId, ModuleId)>,
@@ -45,7 +46,8 @@ impl ModuleManager {
 
         Ok(Self {
             modules,
-            subs: HashMap::new(),
+            sub_tokens: HashMap::new(),
+            stream_tokens: HashMap::new(),
             by_module: HashMap::with_capacity(modules_len),
             by_surface: HashMap::with_capacity(modules_len),
             by_target: HashMap::with_capacity(modules_len),
@@ -363,11 +365,55 @@ impl ModuleManager {
                     tokens.push(token);
                 }
                 orbit_api::Subscription::Batch(_) => unreachable!(),
+                orbit_api::Subscription::Stream(_) => unreachable!(),
                 orbit_api::Subscription::None => (),
             }
         }
+
         if !tokens.is_empty() {
-            self.subs.entry(*mid).or_default().append(&mut tokens);
+            self.sub_tokens.entry(*mid).or_default().append(&mut tokens);
+        }
+
+        let mut tokens = Vec::new();
+        for factory in usub.streams {
+            let ui_tx = ui_tx.clone();
+            let mid = *mid;
+
+            let (stream_tx, stream_rx) = calloop::channel::channel::<ErasedMsg>();
+            let rx_token = loop_handle
+                .insert_source(stream_rx, move |evt, _, _| {
+                    if let calloop::channel::Event::Msg(msg) = evt {
+                        let _ =
+                            ui_tx.send(Event::Ui(event::Ui::Module(mid, SctkEvent::message(msg))));
+                    }
+                })
+                .expect("insert stream channel");
+
+            let sender = SubscriptionSender::new(Arc::new(move |msg: ErasedMsg| {
+                stream_tx.send(msg).map_err(|_| SendError::Disconnected)
+            }));
+
+            let (executor, scheduler) =
+                calloop::futures::executor::<()>().expect("create stream executor");
+
+            let factory_future = factory(sender);
+            scheduler
+                .schedule(factory_future)
+                .expect("schedule stream factory");
+
+            let exec_token = loop_handle
+                .insert_source(executor, |_ret, _, _| {
+                    // Future finished.
+                })
+                .expect("insert stream executor");
+            tokens.push((exec_token, rx_token));
+        }
+
+        if !tokens.is_empty() {
+            self.stream_tokens
+                .entry(*mid)
+                .or_default()
+                .append(&mut tokens);
         }
     }
 
@@ -376,9 +422,18 @@ impl ModuleManager {
         loop_handle: &mut LoopHandle<SctkState>,
         mid: &ModuleId,
     ) {
-        if let Some(tokens) = self.subs.remove(mid) {
+        if let Some(tokens) = self.sub_tokens.remove(mid) {
             for token in tokens {
                 loop_handle.remove(token);
+            }
+        }
+    }
+
+    pub fn remove_streams(&mut self, loop_handle: &mut LoopHandle<SctkState>, mid: &ModuleId) {
+        if let Some(tokens) = self.stream_tokens.remove(mid) {
+            for (exec_token, rx_token) in tokens {
+                loop_handle.remove(exec_token);
+                loop_handle.remove(rx_token);
             }
         }
     }
@@ -464,6 +519,7 @@ impl ModuleManager {
         self.by_target.retain(|_, (_, owner)| owner != mid);
 
         self.remove_subscriptions(loop_handle, mid);
+        self.remove_streams(loop_handle, mid);
 
         sctk.destroy_surfaces(&sids);
     }

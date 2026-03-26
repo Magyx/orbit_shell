@@ -1,4 +1,4 @@
-use std::{fmt, pin::Pin, time::Duration};
+use std::{fmt, pin::Pin, sync::Arc, time::Duration};
 
 use serde::{Serialize, de::DeserializeOwned};
 use ui::{sctk::SctkEvent, widget::Element};
@@ -53,13 +53,75 @@ impl<M: Send + 'static> Task<M> {
     }
 }
 
-// TODO: add from stream/async
-#[derive(Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SendError {
+    Disconnected,
+}
+
+impl fmt::Display for SendError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "SubscriptionSender: failed to send message (receiver dropped)"
+        )
+    }
+}
+
+impl std::error::Error for SendError {}
+
+pub struct SubscriptionSender<M> {
+    pub(crate) inner: Arc<dyn Fn(M) -> Result<(), SendError> + Send + Sync + 'static>,
+}
+
+impl<M: Send + 'static> SubscriptionSender<M> {
+    #[doc(hidden)]
+    pub fn new(f: Arc<dyn Fn(M) -> Result<(), SendError> + Send + Sync + 'static>) -> Self {
+        Self { inner: f }
+    }
+
+    pub fn send(&self, msg: M) -> Result<(), SendError> {
+        (self.inner)(msg)
+    }
+}
+
+pub type BoxStreamFactory<M> =
+    Box<dyn FnOnce(SubscriptionSender<M>) -> BoxFuture<()> + Send + 'static>;
+
 pub enum Subscription<M: Send + 'static> {
     None,
     Batch(Vec<Subscription<M>>),
     Interval { every: Duration, message: M },
     Timeout { after: Duration, message: M },
+    Stream(BoxStreamFactory<M>),
+}
+
+impl<M: Send + 'static> Subscription<M> {
+    pub fn stream<F, Fut>(f: F) -> Self
+    where
+        F: FnOnce(SubscriptionSender<M>) -> Fut + Send + 'static,
+        Fut: Future<Output = ()> + Send + 'static,
+    {
+        Self::Stream(Box::new(|tx| Box::pin(f(tx))))
+    }
+}
+
+impl<M: Send + Clone + 'static> Clone for Subscription<M> {
+    fn clone(&self) -> Self {
+        match self {
+            Self::None => Self::None,
+            Self::Batch(v) => Self::Batch(v.clone()),
+            Self::Interval { every, message } => Self::Interval {
+                every: *every,
+                message: message.clone(),
+            },
+            Self::Timeout { after, message } => Self::Timeout {
+                after: *after,
+                message: message.clone(),
+            },
+            // FnOnce factories are non-clonable; degrade gracefully.
+            Self::Stream(_) => Self::None,
+        }
+    }
 }
 
 pub trait OrbitModule: Default + 'static {
