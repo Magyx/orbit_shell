@@ -3,8 +3,9 @@ pkgname=(
   'orbit-git'
   'orbit-module-wallpaper-git'
   'orbit-module-bar-git'
+  'orbit-module-cliphistory-git'
 )
-pkgver=0.1.0.r46.gc65f5fa
+pkgver=0.1.0.r52.g2efb7d7
 pkgrel=1
 pkgdesc='Orbit shell daemon and CLI'
 arch=('x86_64' 'aarch64')
@@ -39,7 +40,8 @@ build() {
     -p orbitd \
     -p orbit \
     -p wallpaper \
-    -p bar
+    -p bar \
+    -p cliphistory
 }
 
 package_orbit-git() {
@@ -91,5 +93,18 @@ package_orbit-module-bar-git() {
 
   install -Dm644 target/release/libbar.so \
     "$pkgdir/usr/lib/orbit/modules/bar.so"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
+
+package_orbit-module-cliphistory-git() {
+  pkgdesc='Orbit module: cliphistory'
+  depends=('orbit-git')
+  provides=("orbit-module-cliphistory=${pkgver}")
+  conflicts=('orbit-module-cliphistory')
+
+  cd "$srcdir/orbitshell"
+
+  install -Dm644 target/release/libcliphistory.so \
+    "$pkgdir/usr/lib/orbit/modules/cliphistory.so"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }

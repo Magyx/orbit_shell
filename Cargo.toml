@@ -8,6 +8,7 @@ members = [
   "xtask",
   "modules/wallpaper",
   "modules/bar",
+  "modules/cliphistory",
 ]
 
 [workspace.dependencies]
