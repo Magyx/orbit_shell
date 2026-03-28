@@ -39,12 +39,12 @@ pub enum Msg {
 }
 
 #[derive(Default, Debug)]
-pub struct Clipboard {
+pub struct ClipHistory {
     cfg: Config,
     history: Vec<String>,
 }
 
-impl OrbitModule for Clipboard {
+impl OrbitModule for ClipHistory {
     type Config = Config;
     type Message = Msg;
 
@@ -107,6 +107,8 @@ impl OrbitModule for Clipboard {
             .padding(Vec4::splat(8))
             .size(Size::splat(Length::Grow))
             .color(Color::rgba(20, 20, 20, 242));
+
+        println!("view called");
 
         col.push(
             Row::new(el![
@@ -203,9 +205,9 @@ impl OrbitModule for Clipboard {
 }
 
 orbit_plugin! {
-    module = Clipboard,
+    module = ClipHistory,
     manifest = {
-        name: "clipboard",
+        name: "cliphistory",
         commands: [("clear", Msg::Clear)],
         options: Options::Layer(LayerOptions {
             layer: Layer::Top,
@@ -213,7 +215,7 @@ orbit_plugin! {
             anchors: Anchor::TOP | Anchor::RIGHT,
             exclusive_zone: 0,
             keyboard_interactivity: KeyboardInteractivity::OnDemand,
-            namespace: Some("orbit-clipboard".to_string()),
+            namespace: Some("orbit-cliphistory".to_string()),
             output: Some(OutputSet::All),
         }),
         show_on_startup: false,
