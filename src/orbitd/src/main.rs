@@ -215,6 +215,10 @@ impl<'a> Orbit<'a> {
                                         let module =
                                             self.module_manager.module(mid).expect("just found");
 
+                                        if !module.is_loaded() {
+                                            continue;
+                                        }
+
                                         let new_surfaces = self
                                             .sctk
                                             .ensure_surfaces(&module.as_ref().manifest().options);
