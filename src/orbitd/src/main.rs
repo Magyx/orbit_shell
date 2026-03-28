@@ -361,6 +361,11 @@ impl<'a> Orbit<'a> {
                                 continue;
                             };
 
+                            if !module.is_loaded() {
+                                tracing::warn!(module = %module_name, "module is not loaded");
+                                continue;
+                            }
+
                             let Some(message) = module.as_ref().command_message(&command_name)
                             else {
                                 tracing::warn!(module = %module_name, command = %command_name, "unknown module command");
