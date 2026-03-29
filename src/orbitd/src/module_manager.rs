@@ -86,17 +86,6 @@ impl ModuleManager {
         self.modules.get_mut(&id)
     }
 
-    pub fn with_module<R>(
-        &mut self,
-        mid: ModuleId,
-        f: impl FnOnce(&mut Self, &mut ModuleInfo) -> R,
-    ) -> Option<R> {
-        let mut module = self.modules.remove(&mid)?;
-        let out = f(self, &mut module);
-        self.modules.insert(mid, module);
-        Some(out)
-    }
-
     pub fn by_surface(&self, sid: &SurfaceId) -> Option<&(TargetId, ModuleId)> {
         self.by_surface.get(sid)
     }
@@ -207,10 +196,8 @@ impl ModuleManager {
         let Some(module) = self.modules.get_mut(mid) else {
             return;
         };
-        if !module.toggled {
-            return;
-        }
 
+        module.toggled = true;
         let opts_final = match opts {
             Some(o) => o,
             None => {
@@ -455,7 +442,7 @@ impl ModuleManager {
         Ok(())
     }
 
-    pub fn realize_modules(
+    pub fn realize_toggled_modules(
         &mut self,
         engine: &mut Engine<'_>,
         sctk: &mut SctkApp,
@@ -464,7 +451,9 @@ impl ModuleManager {
         config: &Config,
     ) {
         for mid in self.modules.keys().copied().collect::<Vec<ModuleId>>() {
-            self.realize_module(engine, sctk, tx, loop_handle, config, &mid);
+            if self.modules[&mid].toggled {
+                self.realize_module(engine, sctk, tx, loop_handle, config, &mid);
+            }
         }
     }
 
