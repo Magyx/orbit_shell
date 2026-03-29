@@ -91,7 +91,7 @@ impl OrbitModule for Bar {
     ) -> Task<Msg> {
         if let Event::Message(Msg::Tick) = event {
             self.now = chrono::Local::now();
-            Task::RedrawTarget
+            Task::RedrawModule
         } else {
             Task::None
         }
@@ -119,16 +119,12 @@ impl OrbitModule for Bar {
                 return Duration::from_millis(100);
             }
             if fmt.contains("%S") {
-                return Duration::from_millis(500);
-            }
-            if fmt.contains("%M") {
                 return Duration::from_secs(1);
             }
-            if fmt.contains("%H") {
+            if fmt.contains("%M") {
                 return Duration::from_secs(60);
             }
-
-            Duration::from_secs(30 * 60)
+            Duration::from_secs(3600)
         }
         Subscription::SyncedInterval {
             every: interval_for_format(&self.cfg.time_format),
