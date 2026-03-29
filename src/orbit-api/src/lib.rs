@@ -92,6 +92,8 @@ pub enum Subscription<M: Send + 'static> {
     Batch(Vec<Subscription<M>>),
     Interval { every: Duration, message: M },
     Timeout { after: Duration, message: M },
+    SyncedInterval { every: Duration, message: M },
+    SyncedTimeout { after: Duration, message: M },
     Stream(BoxStreamFactory<M>),
 }
 
@@ -115,6 +117,14 @@ impl<M: Send + Clone + 'static> Clone for Subscription<M> {
                 message: message.clone(),
             },
             Self::Timeout { after, message } => Self::Timeout {
+                after: *after,
+                message: message.clone(),
+            },
+            Self::SyncedInterval { every, message } => Self::SyncedInterval {
+                every: *every,
+                message: message.clone(),
+            },
+            Self::SyncedTimeout { after, message } => Self::SyncedTimeout {
                 after: *after,
                 message: message.clone(),
             },

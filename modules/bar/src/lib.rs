@@ -130,7 +130,7 @@ impl OrbitModule for Bar {
 
             Duration::from_secs(30 * 60)
         }
-        Subscription::Interval {
+        Subscription::SyncedInterval {
             every: interval_for_format(&self.cfg.time_format),
             message: Msg::Tick,
         }

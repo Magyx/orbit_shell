@@ -5,12 +5,8 @@ use std::{
     sync::{Arc, mpsc},
 };
 
-use calloop::{
-    LoopHandle, RegistrationToken,
-    futures::Scheduler,
-    timer::{TimeoutAction, Timer},
-};
-use orbit_api::{Engine, ErasedMsg, SendError, SubscriptionSender};
+use calloop::{LoopHandle, RegistrationToken, futures::Scheduler};
+use orbit_api::{Engine, ErasedMsg};
 use orbit_dbus::DbusEvent;
 use ui::{
     graphics::TargetId,
@@ -311,91 +307,14 @@ impl ModuleManager {
 
         let usub = api_utils::unravel_sub(module.as_ref().subscriptions());
 
-        let ui_tx = tx.clone();
         let mut tokens = Vec::new();
-        for sub in usub.subs {
-            match sub {
-                orbit_api::Subscription::Interval { every, message } => {
-                    let timer = Timer::from_duration(every);
-                    let token = loop_handle
-                        .insert_source(timer, {
-                            let base = message;
-                            let ui_tx = ui_tx.clone();
-                            let mid = *mid;
-                            move |_deadline: std::time::Instant, _, _| {
-                                let _ = ui_tx.send(Event::Ui(event::Ui::Module(
-                                    mid,
-                                    SctkEvent::message(base.clone_for_send()),
-                                )));
-                                TimeoutAction::ToDuration(every)
-                            }
-                        })
-                        .expect("insert Timer");
-                    tokens.push(token);
-                }
-                orbit_api::Subscription::Timeout { after, message } => {
-                    let timer = Timer::from_duration(after);
-                    let token = loop_handle
-                        .insert_source(timer, {
-                            let base = message;
-                            let ui_tx = ui_tx.clone();
-                            let mid = *mid;
-                            move |_deadline: std::time::Instant, _, _| {
-                                let _ = ui_tx.send(Event::Ui(event::Ui::Module(
-                                    mid,
-                                    SctkEvent::message(base.clone_for_send()),
-                                )));
-                                TimeoutAction::Drop
-                            }
-                        })
-                        .expect("insert Timer");
-                    tokens.push(token);
-                }
-                orbit_api::Subscription::Batch(_) => unreachable!(),
-                orbit_api::Subscription::Stream(_) => unreachable!(),
-                orbit_api::Subscription::None => (),
-            }
-        }
-
+        super::subscriptions::handle_subs(usub.subs, tx, loop_handle, mid, &mut tokens);
         if !tokens.is_empty() {
             self.sub_tokens.entry(*mid).or_default().append(&mut tokens);
         }
 
         let mut tokens = Vec::new();
-        for factory in usub.streams {
-            let ui_tx = ui_tx.clone();
-            let mid = *mid;
-
-            let (stream_tx, stream_rx) = calloop::channel::channel::<ErasedMsg>();
-            let rx_token = loop_handle
-                .insert_source(stream_rx, move |evt, _, _| {
-                    if let calloop::channel::Event::Msg(msg) = evt {
-                        let _ =
-                            ui_tx.send(Event::Ui(event::Ui::Module(mid, SctkEvent::message(msg))));
-                    }
-                })
-                .expect("insert stream channel");
-
-            let sender = SubscriptionSender::new(Arc::new(move |msg: ErasedMsg| {
-                stream_tx.send(msg).map_err(|_| SendError::Disconnected)
-            }));
-
-            let (executor, scheduler) =
-                calloop::futures::executor::<()>().expect("create stream executor");
-
-            let factory_future = factory(sender);
-            scheduler
-                .schedule(factory_future)
-                .expect("schedule stream factory");
-
-            let exec_token = loop_handle
-                .insert_source(executor, |_ret, _, _| {
-                    // Future finished.
-                })
-                .expect("insert stream executor");
-            tokens.push((exec_token, rx_token));
-        }
-
+        super::subscriptions::handle_streams(usub.streams, tx, loop_handle, mid, &mut tokens);
         if !tokens.is_empty() {
             self.stream_tokens
                 .entry(*mid)
