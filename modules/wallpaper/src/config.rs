@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Duration};
 
 use orbit_api::serde::{Deserialize, Serialize};
 
@@ -20,6 +20,21 @@ pub enum WidgetConfig {
         #[serde(default = "default_time_format")]
         time_format: String,
     },
+    None,
+}
+
+impl WidgetConfig {
+    pub fn clock_duration(&self) -> Option<Duration> {
+        match self {
+            Self::Clock { time_format, .. } => Some(match time_format {
+                f if f.contains("%f") => Duration::from_millis(100),
+                f if f.contains("%S") => Duration::from_secs(1),
+                f if f.contains("%M") => Duration::from_secs(60),
+                _ => Duration::from_secs(3600),
+            }),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

@@ -36,7 +36,14 @@ pub struct PerTarget {
 }
 
 #[derive(Default, Debug)]
+struct UsedWidgets {
+    clock: bool,
+}
+
+#[derive(Default, Debug)]
 pub struct Wallpaper {
+    widgets: UsedWidgets,
+
     cfg: Config,
     targets: HashMap<TargetId, PerTarget>,
 }
@@ -73,35 +80,24 @@ impl Wallpaper {
     fn pick_random_image_unique(&self, root: &Path) -> Option<PathBuf> {
         let mut all = Vec::new();
         Self::collect_images_rec(root, &mut all);
-
         if all.is_empty() {
             return None;
         }
 
         let used: HashSet<&Path> = self.targets.values().map(|t| t.file.as_path()).collect();
+        let mut rng = rand::rng();
 
-        let mut unused: Vec<PathBuf> = all
+        let mut candidates: Vec<PathBuf> = all
             .into_iter()
             .filter(|p| !used.contains(p.as_path()))
             .collect();
 
-        let mut rng = rand::rng();
-
-        if !unused.is_empty() {
-            unused.shuffle(&mut rng);
-            return unused.pop();
+        if candidates.is_empty() {
+            candidates = self.targets.values().map(|t| t.file.clone()).collect();
         }
 
-        let mut any: Vec<PathBuf> = self.targets.values().map(|t| t.file.clone()).collect();
-        if any.is_empty() {
-            let mut fallback = Vec::new();
-            Self::collect_images_rec(root, &mut fallback);
-            fallback.shuffle(&mut rng);
-            fallback.pop()
-        } else {
-            any.shuffle(&mut rng);
-            any.pop()
-        }
+        candidates.shuffle(&mut rng);
+        candidates.into_iter().next()
     }
 
     fn load_texture<'a>(
@@ -122,58 +118,44 @@ impl Wallpaper {
         }
     }
 
-    fn ensure_texture_loaded<'a>(&mut self, tid: &TargetId, engine: &mut Engine<'a>) -> bool {
+    fn ensure_texture_loaded(&mut self, tid: &TargetId, engine: &mut Engine<'_>) -> bool {
         if self.targets.contains_key(tid) || !self.cfg.source.exists() {
             return false;
         }
-
-        let Some(p) = self.pick_random_image_unique(Path::new(&self.cfg.source)) else {
+        let Some(path) = self.pick_random_image_unique(&self.cfg.source) else {
             return false;
         };
-
-        if let Some([w, h]) = engine.globals(tid).map(|g| g.window_size)
-            && w > 1.0
-            && h > 1.0
-            && let width = w.ceil() as u32
-            && let height = h.ceil() as u32
-            && let Some(handle) = Self::load_texture(&p, width, height, engine)
-        {
-            self.targets.insert(
-                *tid,
-                PerTarget {
-                    size: Size::new(width, height),
-                    tex: handle,
-                    file: p,
-                },
-            );
-            true
-        } else {
-            false
+        let Some(globals) = engine.globals(tid) else {
+            return false;
+        };
+        let (w, h) = (
+            globals.window_size[0].ceil() as u32,
+            globals.window_size[1].ceil() as u32,
+        );
+        if w == 0 || h == 0 {
+            return false;
         }
+        let Some(tex) = Self::load_texture(&path, w, h, engine) else {
+            return false;
+        };
+        self.targets.insert(
+            *tid,
+            PerTarget {
+                size: Size::new(w, h),
+                tex,
+                file: path,
+            },
+        );
+        true
     }
 
-    fn any_clock(&self) -> bool {
+    fn get_min_clock_duration(&self) -> Duration {
         self.cfg
             .widgets
             .iter()
-            .any(|w| matches!(w, WidgetConfig::Clock { .. }))
-    }
-
-    fn clock_needs_seconds(&self) -> bool {
-        self.cfg.widgets.iter().any(|w| match w {
-            WidgetConfig::Clock { time_format, .. } => time_format.contains("%S"),
-        })
-    }
-
-    fn place_widget<E>(&self, target: &PerTarget, element: E, x: f32, y: f32, on: &mut Overlay<Msg>)
-    where
-        E: Into<Element<Msg>>,
-    {
-        on.push(
-            element,
-            (target.size.width as f32 * x.clamp(0.0, 1.0)).ceil() as i32,
-            (target.size.height as f32 * y.clamp(0.0, 1.0)).ceil() as i32,
-        );
+            .filter_map(|w| w.clock_duration())
+            .min()
+            .unwrap_or(Duration::from_hours(1))
     }
 }
 
@@ -205,6 +187,7 @@ impl OrbitModule for Wallpaper {
                         errors.push(format!("- invalid time_format `{time_format}`: {e}"));
                     }
                 }
+                WidgetConfig::None => (),
             }
         }
 
@@ -222,9 +205,16 @@ impl OrbitModule for Wallpaper {
         _options: &mut orbit_api::ui::sctk::Options,
     ) -> bool {
         if self.cfg.source != config.source {
-            Self::cleanup(self, engine);
+            self.cleanup(engine);
         }
         self.cfg = config;
+
+        self.widgets.clock = self
+            .cfg
+            .widgets
+            .iter()
+            .any(|w| matches!(w, WidgetConfig::Clock { .. }));
+
         false
     }
 
@@ -234,45 +224,54 @@ impl OrbitModule for Wallpaper {
         engine: &mut Engine<'a>,
         event: &Event<Self::Message>,
     ) -> Task<Msg> {
-        let mut needs_redraw = self.ensure_texture_loaded(&tid, engine);
-
         match event {
             &Event::Resized { size } => {
-                if let Some(target) = self.targets.get_mut(&tid)
-                    && target.size != size
-                    && let Some(handle) =
+                if let Some(target) = self.targets.get_mut(&tid) {
+                    if target.size == size {
+                        return Task::None;
+                    }
+                    if let Some(tex) =
                         Self::load_texture(&target.file, size.width, size.height, engine)
-                {
-                    let old = std::mem::replace(&mut target.tex, handle);
-                    target.size = size;
-                    engine.unload_texture(old);
-                    needs_redraw = true;
+                    {
+                        let old = std::mem::replace(&mut target.tex, tex);
+                        target.size = size;
+                        engine.unload_texture(old);
+                    }
+                } else {
+                    self.ensure_texture_loaded(&tid, engine);
+                }
+                Task::RedrawTarget
+            }
+            Event::Message(Msg::Tick) => {
+                if self.widgets.clock {
+                    Task::RedrawModule
+                } else {
+                    Task::None
                 }
             }
-            Event::Message(msg) => match msg {
-                Msg::Tick => {
-                    if self.any_clock() {
-                        needs_redraw = true;
-                    }
+            Event::Message(Msg::Cycle) => {
+                let targets_to_reload: Vec<_> = self.targets.drain().collect();
+                for (tid, target) in targets_to_reload {
+                    engine.unload_texture(target.tex);
+                    self.ensure_texture_loaded(&tid, engine);
                 }
-                Msg::Cycle => {
-                    if let Some(target) = self.targets.remove(&tid) {
-                        engine.unload_texture(target.tex);
-                        needs_redraw |= self.ensure_texture_loaded(&tid, engine);
-                    }
-                }
-            },
-            _ => {}
-        }
-
-        if needs_redraw {
-            Task::RedrawTarget
-        } else {
-            Task::None
+                Task::RedrawTarget
+            }
+            _ => Task::None,
         }
     }
 
     fn view(&self, tid: &TargetId) -> Element<Self::Message> {
+        fn place_widget<E>(target: &PerTarget, element: E, x: f32, y: f32, on: &mut Overlay<Msg>)
+        where
+            E: Into<Element<Msg>>,
+        {
+            on.push(
+                element,
+                (target.size.width as f32 * x.clamp(0.0, 1.0)).ceil() as i32,
+                (target.size.height as f32 * y.clamp(0.0, 1.0)).ceil() as i32,
+            );
+        }
         use Length::Grow;
 
         let Some(target) = self.targets.get(tid) else {
@@ -294,8 +293,9 @@ impl OrbitModule for Wallpaper {
                 } => {
                     let time = chrono::Local::now().format(time_format).to_string();
                     let text = Text::new(time, *font_size);
-                    self.place_widget(target, text, *x, *y, &mut view);
+                    place_widget(target, text, *x, *y, &mut view);
                 }
+                WidgetConfig::None => (),
             }
         }
 
@@ -303,28 +303,20 @@ impl OrbitModule for Wallpaper {
     }
 
     fn subscriptions(&self) -> Subscription<Self::Message> {
-        let every_wall = self
+        let cycle: Duration = self
             .cfg
             .cycle
             .parse::<humantime::Duration>()
-            .unwrap_or(humantime::Duration::from(std::time::Duration::from_secs(
-                3600,
-            )))
-            .into();
-
+            .map(Into::into)
+            .unwrap_or(Duration::from_secs(3600));
         let mut subs = vec![Subscription::Interval {
-            every: every_wall,
+            every: cycle,
             message: Msg::Cycle,
         }];
 
-        if self.any_clock() {
-            let every_clock = if self.clock_needs_seconds() {
-                Duration::from_secs(1)
-            } else {
-                Duration::from_secs(60)
-            };
-                every: every_clock,
+        if self.widgets.clock {
             subs.push(Subscription::SyncedInterval {
+                every: self.get_min_clock_duration(),
                 message: Msg::Tick,
             });
         }
