@@ -217,6 +217,8 @@ macro_rules! orbit_plugin {
                     None => None,
                     Interval { every, message } => Interval { every, message: $crate::ErasedMsg::new(message) },
                     Timeout  { after, message } => Timeout  { after, message: $crate::ErasedMsg::new(message) },
+                    SyncedInterval { every, message } => SyncedInterval { every, message: $crate::ErasedMsg::new(message) },
+                    SyncedTimeout { after, message } => SyncedTimeout { after, message: $crate::ErasedMsg::new(message) },
                     Batch(v) => Batch(v.into_iter().map(Self::map_sub).collect()),
                     Stream(typed_factory) => {
                         Stream(::std::boxed::Box::new(

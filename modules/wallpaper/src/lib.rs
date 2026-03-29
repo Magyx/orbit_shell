@@ -323,8 +323,8 @@ impl OrbitModule for Wallpaper {
             } else {
                 Duration::from_secs(60)
             };
-            subs.push(Subscription::Interval {
                 every: every_clock,
+            subs.push(Subscription::SyncedInterval {
                 message: Msg::Tick,
             });
         }

@@ -26,6 +26,7 @@ mod event;
 mod module;
 mod module_manager;
 mod sctk;
+mod subscriptions;
 mod trace;
 
 struct Orbit<'a> {
