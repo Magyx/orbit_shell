@@ -177,7 +177,7 @@ impl<'a> Orbit<'a> {
             task_scheduler
         };
 
-        self.module_manager.realize_modules(
+        self.module_manager.realize_toggled_modules(
             &mut self.engine,
             &mut self.sctk,
             &tx,
@@ -293,7 +293,7 @@ impl<'a> Orbit<'a> {
                                 &self.config_path,
                             ) {
                                 Ok(_) => {
-                                    self.module_manager.realize_modules(
+                                    self.module_manager.realize_toggled_modules(
                                         &mut self.engine,
                                         &mut self.sctk,
                                         &tx,
@@ -412,15 +412,15 @@ impl<'a> Orbit<'a> {
                                 };
 
                                 if should_unrealize {
-                                    self.module_manager.with_module(mid, |mgr, module| {
-                                        mgr.unrealize_module(
-                                            &mut self.engine,
-                                            &mut self.sctk,
-                                            &mut event_loop.handle(),
-                                            &mid,
-                                        );
+                                    self.module_manager.unrealize_module(
+                                        &mut self.engine,
+                                        &mut self.sctk,
+                                        &mut event_loop.handle(),
+                                        &mid,
+                                    );
+                                    if let Some(module) = self.module_manager.module_mut(mid) {
                                         module.unload(&mut self.engine);
-                                    });
+                                    }
                                 }
 
                                 if (should_realize || config_changed)
@@ -436,19 +436,22 @@ impl<'a> Orbit<'a> {
                                 }
 
                                 if should_realize {
-                                    self.module_manager.with_module(mid, |mgr, module| {
-                                        module.toggled = module.as_ref().manifest().show_on_startup;
-                                        if module.toggled {
-                                            mgr.realize_module(
-                                                &mut self.engine,
-                                                &mut self.sctk,
-                                                &tx,
-                                                &mut event_loop.handle(),
-                                                &new_config,
-                                                &mid,
-                                            );
-                                        }
-                                    });
+                                    let show_on_startup = self
+                                        .module_manager
+                                        .module(mid)
+                                        .map(|m| m.as_ref().manifest().show_on_startup)
+                                        .unwrap_or(false);
+
+                                    if show_on_startup {
+                                        self.module_manager.realize_module(
+                                            &mut self.engine,
+                                            &mut self.sctk,
+                                            &tx,
+                                            &mut event_loop.handle(),
+                                            &new_config,
+                                            &mid,
+                                        );
+                                    }
                                 }
 
                                 if !should_realize
