@@ -11,7 +11,7 @@ use orbit_api::{
     ui::{
         el,
         graphics::TargetId,
-        model::Size,
+        model::{Family, Size},
         render::texture::TextureHandle,
         sctk::{Anchor, KeyboardInteractivity, Layer, LayerOptions, Options, OutputSet},
         widget::{ContentFit, Element, Image, Length, Overlay, Rectangle, Text},
@@ -289,10 +289,14 @@ impl OrbitModule for Wallpaper {
                     x,
                     y,
                     font_size,
+                    font_family,
                     time_format,
                 } => {
                     let time = chrono::Local::now().format(time_format).to_string();
-                    let text = Text::new(time, *font_size);
+                    let mut text = Text::new(time, *font_size).family(Family::Monospace);
+                    if let Some(family) = font_family {
+                        text = text.family(family.clone().into());
+                    }
                     place_widget(target, text, *x, *y, &mut view);
                 }
                 WidgetConfig::None => (),
