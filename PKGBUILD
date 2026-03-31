@@ -4,7 +4,7 @@ pkgname=(
   'orbit-module-wallpaper-git'
   'orbit-module-bar-git'
 )
-pkgver=0.1.0.r46.gc65f5fa
+pkgver=git
 pkgrel=1
 pkgdesc='Orbit shell daemon and CLI'
 arch=('x86_64' 'aarch64')
