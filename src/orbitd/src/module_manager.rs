@@ -96,7 +96,7 @@ impl ModuleManager {
     }
 
     pub fn add_id(&mut self, mid: ModuleId, (sid, tid): (SurfaceId, TargetId)) {
-        self.by_module.entry(mid).and_modify(|ts| ts.push(tid));
+        self.by_module.entry(mid).or_default().push(tid);
         self.by_surface.insert(sid, (tid, mid));
         self.by_target.insert(tid, (sid, mid));
     }
@@ -205,15 +205,14 @@ impl ModuleManager {
             }
         };
 
+        for (key, factory) in module.as_ref().pipelines() {
+            engine.register_pipeline(PipelineKey::Other(key), factory);
+        }
+
         let items = sctk.create_surfaces(opts_final);
         for CreatedSurface { sid, handles, size } in items {
             let tid = engine.attach_target(Arc::new(handles), size);
-            self.by_module.entry(*mid).or_default().push(tid);
-            self.by_surface.insert(sid, (tid, *mid));
-            self.by_target.insert(tid, (sid, *mid));
-        }
-        for (key, factory) in module.as_ref().pipelines() {
-            engine.register_pipeline(PipelineKey::Other(key), factory);
+            self.add_id(*mid, (sid, tid));
         }
 
         self.add_subscriptions(tx, loop_handle, mid);
