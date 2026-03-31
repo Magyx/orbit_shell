@@ -216,7 +216,7 @@ impl<'a> Orbit<'a> {
                                         let module =
                                             self.module_manager.module(mid).expect("just found");
 
-                                        if !module.is_loaded() {
+                                        if !module.is_loaded() || !module.toggled {
                                             continue;
                                         }
 
