@@ -5,7 +5,7 @@ pkgname=(
   'orbit-module-bar-git'
   'orbit-module-cliphistory-git'
 )
-pkgver=0.1.0.r52.g2efb7d7
+pkgver=git
 pkgrel=1
 pkgdesc='Orbit shell daemon and CLI'
 arch=('x86_64' 'aarch64')
