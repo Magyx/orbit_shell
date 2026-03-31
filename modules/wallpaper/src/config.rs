@@ -1,6 +1,30 @@
+use orbit_api::{
+    serde::{Deserialize, Serialize},
+    ui::model::Family,
+};
+use std::borrow::Cow;
 use std::{path::PathBuf, time::Duration};
 
-use orbit_api::serde::{Deserialize, Serialize};
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(crate = "orbit_api::serde")]
+pub enum FontFamilyConfig {
+    Monospace,
+    SansSerif,
+    Serif,
+    #[serde(untagged)]
+    Name(String),
+}
+
+impl From<FontFamilyConfig> for Family {
+    fn from(config: FontFamilyConfig) -> Self {
+        match config {
+            FontFamilyConfig::Monospace => Family::Monospace,
+            FontFamilyConfig::SansSerif => Family::SansSerif,
+            FontFamilyConfig::Serif => Family::Serif,
+            FontFamilyConfig::Name(s) => Family::Name(Cow::Owned(s)),
+        }
+    }
+}
 
 fn default_clock_font_size() -> f32 {
     48.0
@@ -17,6 +41,7 @@ pub enum WidgetConfig {
         y: f32,
         #[serde(default = "default_clock_font_size")]
         font_size: f32,
+        font_family: Option<FontFamilyConfig>,
         #[serde(default = "default_time_format")]
         time_format: String,
     },
