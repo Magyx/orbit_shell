@@ -5,6 +5,7 @@ use orbit_api::{
     Engine, Event, OrbitModule, Subscription, Task, orbit_plugin,
     ui::{
         el,
+        event::{KeyEvent, LogicalKey},
         graphics::TargetId,
         model::{Color, Size, Vec4},
         sctk::{Anchor, KeyboardInteractivity, Layer, LayerOptions, Options, OutputSet},
@@ -34,6 +35,7 @@ impl Default for Config {
 pub enum Msg {
     Copied(String),
     Clear,
+    Pasted,
 }
 
 #[derive(Default, Debug)]
@@ -84,6 +86,27 @@ impl OrbitModule for ClipHistory {
         event: &Event<Self::Message>,
     ) -> Task<Msg> {
         match event {
+            Event::Key(KeyEvent {
+                logical_key: LogicalKey::Character(c),
+                ..
+            }) => {
+                if let Ok(index) = c.parse::<usize>()
+                    && let Some(entry) = self.history.get(index)
+                {
+                    let text = entry.clone();
+                    return Task::spawn(async move {
+                        Command::new("wl-copy")
+                            .arg("--")
+                            .arg(&text)
+                            .status()
+                            .await
+                            .ok();
+                        Msg::Pasted
+                    });
+                }
+                Task::None
+            }
+            Event::Message(Msg::Pasted) => Task::ExitModule,
             Event::Message(Msg::Copied(text)) => {
                 if self.history.first().map(String::as_str) != Some(text.as_str()) {
                     self.history.insert(0, text.clone());
