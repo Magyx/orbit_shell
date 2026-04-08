@@ -73,7 +73,6 @@ impl OrbitModule for ClipHistory {
         if height_changed {
             if let Options::Layer(layer) = options {
                 layer.size.height = self.cfg.height;
-                layer.exclusive_zone = self.cfg.height as i32;
             }
             return true;
         }
@@ -107,8 +106,6 @@ impl OrbitModule for ClipHistory {
             .padding(Vec4::splat(8))
             .size(Size::splat(Length::Grow))
             .color(Color::rgba(20, 20, 20, 242));
-
-        println!("view called");
 
         col.push(
             Row::new(el![
@@ -216,7 +213,7 @@ orbit_plugin! {
             exclusive_zone: 0,
             keyboard_interactivity: KeyboardInteractivity::OnDemand,
             namespace: Some("orbit-cliphistory".to_string()),
-            output: Some(OutputSet::All),
+            output: Some(OutputSet::Active),
         }),
         show_on_startup: false,
     },
