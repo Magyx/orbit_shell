@@ -1,7 +1,5 @@
-use std::{
-    io::{BufRead, BufReader},
-    process::{Command, Stdio},
-};
+use async_process::{Command, Stdio};
+use futures_lite::{AsyncBufReadExt, StreamExt, io::BufReader};
 
 use orbit_api::{
     Engine, Event, OrbitModule, Subscription, Task, orbit_plugin,
@@ -175,28 +173,29 @@ impl OrbitModule for ClipHistory {
 
             let stdout = child.stdout.take().expect("piped stdout");
             let reader = BufReader::new(stdout);
+            let mut lines = reader.lines();
 
             let mut buf = String::new();
-            for line in reader.lines() {
-                match line {
-                    Ok(l) if l == "\x00" => {
+            loop {
+                match lines.next().await {
+                    Some(Ok(l)) if l == "\x00" => {
                         let text = std::mem::take(&mut buf);
                         if tx.send(Msg::Copied(text)).is_err() {
                             let _ = child.kill();
                             return;
                         }
                     }
-                    Ok(l) => {
+                    Some(Ok(l)) => {
                         if !buf.is_empty() {
                             buf.push('\n');
                         }
                         buf.push_str(&l);
                     }
-                    Err(_) => break,
+                    None | Some(Err(_)) => break,
                 }
             }
 
-            let _ = child.wait();
+            child.status().await.ok();
         })
     }
 }
