@@ -353,10 +353,15 @@ impl<'a> Orbit<'a> {
                             _ = resp_tx.send(self.format_commands(&module_name));
                         }
                         DbusEvent::Toggle(module_name) => {
-                            let Some((mid, module)) =
-                                self.module_manager.find_by_name(&module_name)
-                            else {
-                                continue;
+                            let (mid, module) = {
+                                if let Some((mid, module)) =
+                                    self.module_manager.find_by_name(&module_name)
+                                    && module.is_loaded()
+                                {
+                                    (mid, module)
+                                } else {
+                                    continue;
+                                }
                             };
 
                             if module.toggled {
