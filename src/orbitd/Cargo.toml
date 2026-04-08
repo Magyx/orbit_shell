@@ -20,7 +20,7 @@ ui = { workspace = true, features = ["sctk", "vulkan"] }
 
 smithay-client-toolkit = "0.20.0"
 wayland-client = "0.31.11"
-calloop = { version = "0.14.3", features = ["executor"] }
+calloop = { version = "0.14.3" }
 
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter", "fmt"] }
