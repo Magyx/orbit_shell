@@ -255,7 +255,7 @@ impl OrbitModule for Wallpaper {
                     engine.unload_texture(target.tex);
                     self.ensure_texture_loaded(&tid, engine);
                 }
-                Task::RedrawTarget
+                Task::RedrawModule
             }
             _ => Task::None,
         }
