@@ -1,5 +1,6 @@
 use std::{
     sync::{Arc, mpsc},
+    thread::JoinHandle,
     time::{Duration, SystemTime},
 };
 
@@ -8,15 +9,17 @@ use calloop::{
     timer::{TimeoutAction, Timer},
 };
 use orbit_api::{BoxStreamFactory, ErasedMsg, SendError, Subscription, SubscriptionSender};
-use ui::sctk::{SctkEvent, state::SctkState};
+use ui::sctk::state::SctkState;
 
-use crate::{
-    event::{self, Event},
-    module::ModuleId,
-};
+use crate::{event, module::ModuleId};
+
+pub struct StreamHandle {
+    pub rx_token: RegistrationToken,
+    pub thread: JoinHandle<()>,
+}
 
 fn handle_timer(
-    tx: &mpsc::Sender<Event>,
+    tx: &mpsc::Sender<event::Event>,
     loop_handle: &mut LoopHandle<SctkState>,
     mid: ModuleId,
     message: ErasedMsg,
@@ -28,9 +31,10 @@ fn handle_timer(
         .insert_source(timer, {
             let ui_tx = tx.clone();
             move |_, _, _| {
-                let _ = ui_tx.send(Event::Ui(event::Ui::Module(
+                let _ = ui_tx.send(event::Event::Ui(event::Ui::Result(
+                    event::FromDispatch::Subscription,
                     mid,
-                    SctkEvent::message(message.clone_for_send()),
+                    message.clone_for_send(),
                 )));
                 if repeat {
                     TimeoutAction::ToDuration(duration)
@@ -55,7 +59,7 @@ fn delay_to_next_tick(every: Duration) -> Duration {
 }
 
 fn handle_timer_synced(
-    tx: &mpsc::Sender<Event>,
+    tx: &mpsc::Sender<event::Event>,
     loop_handle: &mut LoopHandle<SctkState>,
     mid: ModuleId,
     message: ErasedMsg,
@@ -67,9 +71,10 @@ fn handle_timer_synced(
         .insert_source(Timer::from_duration(delay), {
             let ui_tx = tx.clone();
             move |deadline, _, _| {
-                let _ = ui_tx.send(Event::Ui(event::Ui::Module(
+                let _ = ui_tx.send(event::Event::Ui(event::Ui::Result(
+                    event::FromDispatch::Subscription,
                     mid,
-                    SctkEvent::message(message.clone_for_send()),
+                    message.clone_for_send(),
                 )));
                 if repeat {
                     TimeoutAction::ToInstant(deadline + duration)
@@ -83,7 +88,7 @@ fn handle_timer_synced(
 
 pub fn handle_subs(
     subs: Vec<Subscription<ErasedMsg>>,
-    tx: &mpsc::Sender<Event>,
+    tx: &mpsc::Sender<event::Event>,
     loop_handle: &mut LoopHandle<SctkState>,
     mid: &ModuleId,
     tokens: &mut Vec<RegistrationToken>,
@@ -112,20 +117,25 @@ pub fn handle_subs(
 
 pub fn handle_streams(
     streams: Vec<BoxStreamFactory<ErasedMsg>>,
-    tx: &mpsc::Sender<Event>,
+    tx: &mpsc::Sender<event::Event>,
     loop_handle: &mut LoopHandle<SctkState>,
     mid: &ModuleId,
-    tokens: &mut Vec<(RegistrationToken, RegistrationToken)>,
+    handles: &mut Vec<StreamHandle>,
 ) {
     for factory in streams {
         let ui_tx = tx.clone();
         let mid = *mid;
 
         let (stream_tx, stream_rx) = calloop::channel::channel::<ErasedMsg>();
+
         let rx_token = loop_handle
             .insert_source(stream_rx, move |evt, _, _| {
                 if let calloop::channel::Event::Msg(msg) = evt {
-                    let _ = ui_tx.send(Event::Ui(event::Ui::Module(mid, SctkEvent::message(msg))));
+                    let _ = ui_tx.send(event::Event::Ui(event::Ui::Result(
+                        event::FromDispatch::Subscription,
+                        mid,
+                        msg,
+                    )));
                 }
             })
             .expect("insert stream channel");
@@ -134,19 +144,13 @@ pub fn handle_streams(
             stream_tx.send(msg).map_err(|_| SendError::Disconnected)
         }));
 
-        let (executor, scheduler) =
-            calloop::futures::executor::<()>().expect("create stream executor");
+        let future = factory(sender);
 
-        let factory_future = factory(sender);
-        scheduler
-            .schedule(factory_future)
-            .expect("schedule stream factory");
+        let thread = std::thread::Builder::new()
+            .name(format!("orbit-stream-{}", mid.0))
+            .spawn(move || futures_lite::future::block_on(future))
+            .expect("spawn stream thread");
 
-        let exec_token = loop_handle
-            .insert_source(executor, |_ret, _, _| {
-                // Future finished.
-            })
-            .expect("insert stream executor");
-        tokens.push((exec_token, rx_token));
+        handles.push(StreamHandle { rx_token, thread });
     }
 }

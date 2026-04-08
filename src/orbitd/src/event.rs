@@ -1,3 +1,4 @@
+use orbit_api::ErasedMsg;
 use orbit_dbus::DbusEvent;
 use ui::sctk::SctkEvent;
 
@@ -17,9 +18,16 @@ pub enum SctkMessage {
 }
 
 #[derive(Debug)]
+pub enum FromDispatch {
+    Subscription,
+    Task,
+}
+
+#[derive(Debug)]
 pub enum Ui {
     Orbit(SctkMessage),
     Sctk(SctkEvent),
     Module(ModuleId, SctkEvent),
+    Result(FromDispatch, ModuleId, ErasedMsg),
     ForceRedraw(ModuleId),
 }

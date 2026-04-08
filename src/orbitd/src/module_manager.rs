@@ -1,3 +1,4 @@
+use std::thread::JoinHandle;
 use std::{
     collections::HashMap,
     fs,
@@ -5,7 +6,7 @@ use std::{
     sync::{Arc, mpsc},
 };
 
-use calloop::{LoopHandle, RegistrationToken, futures::Scheduler};
+use calloop::{LoopHandle, RegistrationToken, channel as loop_channel};
 use orbit_api::{Engine, ErasedMsg};
 use orbit_dbus::DbusEvent;
 use ui::{
@@ -20,15 +21,18 @@ use crate::{
     event::{self, Event},
     module::{ModuleId, ModuleInfo},
     sctk::{CreatedSurface, SctkApp},
+    subscriptions::StreamHandle,
 };
 
 pub struct ModuleManager {
     modules: HashMap<ModuleId, ModuleInfo>,
     sub_tokens: HashMap<ModuleId, Vec<RegistrationToken>>,
-    stream_tokens: HashMap<ModuleId, Vec<(RegistrationToken, RegistrationToken)>>,
+    dispatch_tokens: HashMap<ModuleId, Vec<StreamHandle>>,
     by_module: HashMap<ModuleId, Vec<TargetId>>,
     by_surface: HashMap<SurfaceId, (TargetId, ModuleId)>,
     by_target: HashMap<TargetId, (SurfaceId, ModuleId)>,
+
+    pending_threads: Vec<JoinHandle<()>>,
 }
 
 impl ModuleManager {
@@ -43,10 +47,11 @@ impl ModuleManager {
         Ok(Self {
             modules,
             sub_tokens: HashMap::new(),
-            stream_tokens: HashMap::new(),
+            dispatch_tokens: HashMap::new(),
             by_module: HashMap::with_capacity(modules_len),
             by_surface: HashMap::with_capacity(modules_len),
             by_target: HashMap::with_capacity(modules_len),
+            pending_threads: Vec::new(),
         })
     }
 
@@ -99,6 +104,10 @@ impl ModuleManager {
         self.by_module.entry(mid).or_default().push(tid);
         self.by_surface.insert(sid, (tid, mid));
         self.by_target.insert(tid, (sid, mid));
+    }
+
+    pub fn reap_threads(&mut self) {
+        self.pending_threads.retain(|h| !h.is_finished());
     }
 }
 
@@ -234,7 +243,8 @@ impl ModuleManager {
         mid: &ModuleId,
         module: &ModuleInfo,
         tx: &mpsc::Sender<Event>,
-        task_scheduler: &Scheduler<(ModuleId, ErasedMsg)>,
+        dispatch_tx: &loop_channel::Sender<(ModuleId, ErasedMsg)>,
+        pending_threads: &mut Vec<JoinHandle<()>>,
     ) {
         if let Some(ut) = utask.as_mut() {
             match ut.action() {
@@ -255,11 +265,15 @@ impl ModuleManager {
             if let Some(pending) = ut.tasks.take() {
                 for task in pending {
                     let mid = *mid;
-                    let fut = async move {
-                        let msg = task.await.clone_for_send();
-                        (mid, msg)
-                    };
-                    let _ = task_scheduler.schedule(fut);
+                    let result_tx = dispatch_tx.clone();
+                    let thread = std::thread::Builder::new()
+                        .name(format!("orbit-task-{}", mid.0))
+                        .spawn(move || {
+                            let msg = futures_lite::future::block_on(task);
+                            let _ = result_tx.send((mid, msg.clone_for_send()));
+                        })
+                        .expect("spawn task thread");
+                    pending_threads.push(thread);
                 }
             }
         }
@@ -287,6 +301,13 @@ impl ModuleManager {
             }
         }
 
+        for (_mid, handles) in self.dispatch_tokens.drain() {
+            for handle in handles {
+                self.pending_threads.push(handle.thread);
+            }
+        }
+        self.reap_threads();
+
         self.modules = Self::discover_and_load_modules(config, config_path, engine, None)?;
         Ok(())
     }
@@ -312,13 +333,13 @@ impl ModuleManager {
             self.sub_tokens.entry(*mid).or_default().append(&mut tokens);
         }
 
-        let mut tokens = Vec::new();
-        super::subscriptions::handle_streams(usub.streams, tx, loop_handle, mid, &mut tokens);
+        let mut handles = Vec::new();
+        super::subscriptions::handle_streams(usub.streams, tx, loop_handle, mid, &mut handles);
         if !tokens.is_empty() {
-            self.stream_tokens
+            self.dispatch_tokens
                 .entry(*mid)
                 .or_default()
-                .append(&mut tokens);
+                .append(&mut handles);
         }
     }
 
@@ -335,10 +356,10 @@ impl ModuleManager {
     }
 
     pub fn remove_streams(&mut self, loop_handle: &mut LoopHandle<SctkState>, mid: &ModuleId) {
-        if let Some(tokens) = self.stream_tokens.remove(mid) {
-            for (exec_token, rx_token) in tokens {
-                loop_handle.remove(exec_token);
-                loop_handle.remove(rx_token);
+        if let Some(tokens) = self.dispatch_tokens.remove(mid) {
+            for handle in tokens {
+                loop_handle.remove(handle.rx_token);
+                self.pending_threads.push(handle.thread);
             }
         }
     }
@@ -427,6 +448,7 @@ impl ModuleManager {
 
         self.remove_subscriptions(loop_handle, mid);
         self.remove_streams(loop_handle, mid);
+        self.reap_threads();
 
         sctk.destroy_surfaces(&sids);
     }
@@ -435,18 +457,20 @@ impl ModuleManager {
         &mut self,
         engine: &mut Engine,
         tx: &mpsc::Sender<Event>,
-        task_scheduler: &Scheduler<(ModuleId, ErasedMsg)>,
+        task_tx: &loop_channel::Sender<(ModuleId, ErasedMsg)>,
         event: &SctkEvent,
         id: Option<(ModuleId, Option<TargetId>)>,
     ) {
+        #![allow(clippy::too_many_arguments)]
         fn handle_platform_event_internal(
             engine: &mut Engine,
             tx: &mpsc::Sender<Event>,
-            task_scheduler: &Scheduler<(ModuleId, ErasedMsg)>,
+            task_tx: &loop_channel::Sender<(ModuleId, ErasedMsg)>,
             event: &SctkEvent,
             mid: &ModuleId,
             module: &mut ModuleInfo,
             tid: &TargetId,
+            pending_threads: &mut Vec<JoinHandle<()>>,
         ) {
             let mut task = None;
             engine.handle_platform_event(
@@ -456,7 +480,7 @@ impl ModuleManager {
                 &mut (module, &mut task),
                 tid,
             );
-            ModuleManager::handle_task(task, mid, module, tx, task_scheduler);
+            ModuleManager::handle_task(task, mid, module, tx, task_tx, pending_threads);
         }
 
         if let Some((mid, o_tid)) = id
@@ -466,26 +490,28 @@ impl ModuleManager {
                 handle_platform_event_internal(
                     engine,
                     tx,
-                    task_scheduler,
+                    task_tx,
                     event,
                     &mid,
                     module,
                     &tid,
+                    &mut self.pending_threads,
                 );
             } else {
                 let Some(targets) = self.by_module.get(&mid) else {
                     // TODO: this shouldn't happen so maybe emit a warning or something?
                     return;
                 };
-                for tid in targets {
+                for tid in targets.clone() {
                     handle_platform_event_internal(
                         engine,
                         tx,
-                        task_scheduler,
+                        task_tx,
                         event,
                         &mid,
                         module,
-                        tid,
+                        &tid,
+                        &mut self.pending_threads,
                     );
                 }
             }
@@ -495,15 +521,16 @@ impl ModuleManager {
                     // TODO: this shouldn't happen so maybe emit a warning or something?
                     continue;
                 };
-                for tid in targets {
+                for tid in targets.clone() {
                     handle_platform_event_internal(
                         engine,
                         tx,
-                        task_scheduler,
+                        task_tx,
                         event,
                         mid,
                         module,
-                        tid,
+                        &tid,
+                        &mut self.pending_threads,
                     );
                 }
             }
@@ -516,7 +543,7 @@ impl ModuleManager {
         engine: &mut Engine,
         sctk: &mut SctkApp,
         tx: &mpsc::Sender<Event>,
-        task_scheduler: &Scheduler<(ModuleId, ErasedMsg)>,
+        task_tx: &loop_channel::Sender<(ModuleId, ErasedMsg)>,
         mid: &ModuleId,
         tid: &TargetId,
         poll_override: bool,
@@ -544,7 +571,7 @@ impl ModuleManager {
                 &|tid, s: &ModuleInfo| s.as_ref().view(tid),
                 module,
             );
-            Self::handle_task(task, mid, module, tx, task_scheduler);
+            Self::handle_task(task, mid, module, tx, task_tx, &mut self.pending_threads);
         }
     }
 
@@ -553,7 +580,7 @@ impl ModuleManager {
         engine: &mut Engine,
         sctk: &mut SctkApp,
         tx: &mpsc::Sender<Event>,
-        task_scheduler: &Scheduler<(ModuleId, ErasedMsg)>,
+        task_tx: &loop_channel::Sender<(ModuleId, ErasedMsg)>,
         mid: &ModuleId,
         poll_override: bool,
     ) {
@@ -562,7 +589,7 @@ impl ModuleManager {
         };
         let targets = targets.to_vec();
         for tid in targets {
-            self.render_target(engine, sctk, tx, task_scheduler, mid, &tid, poll_override);
+            self.render_target(engine, sctk, tx, task_tx, mid, &tid, poll_override);
         }
     }
 
@@ -571,12 +598,12 @@ impl ModuleManager {
         engine: &mut Engine,
         sctk: &mut SctkApp,
         tx: &mpsc::Sender<Event>,
-        task_scheduler: &Scheduler<(ModuleId, ErasedMsg)>,
+        task_tx: &loop_channel::Sender<(ModuleId, ErasedMsg)>,
         poll_override: bool,
     ) {
         let modules = self.modules.keys().copied().collect::<Vec<ModuleId>>();
         for mid in modules {
-            self.render_module(engine, sctk, tx, task_scheduler, &mid, poll_override);
+            self.render_module(engine, sctk, tx, task_tx, &mid, poll_override);
         }
     }
 }

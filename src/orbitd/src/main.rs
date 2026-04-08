@@ -1,7 +1,7 @@
 // TODO: better error messages cmon dude
 use std::{fmt::Write, path::PathBuf, sync::mpsc};
 
-use calloop::{EventLoop, channel as loop_channel, futures::executor};
+use calloop::{EventLoop, channel as loop_channel};
 use smithay_client_toolkit::reexports::calloop_wayland_source::WaylandSource;
 use ui::sctk::{SctkEvent, SurfaceId, state::SctkState};
 
@@ -11,6 +11,7 @@ use orbit_dbus::DbusEvent;
 use crate::{
     config::{Config, ConfigEvent, ConfigInstruction, ConfigWatcher, compare_configs},
     dialog::ErrorDialog,
+    event::FromDispatch,
     module::ModuleInfo,
     module_manager::ModuleManager,
     sctk::SctkApp,
@@ -130,6 +131,7 @@ impl<'a> Orbit<'a> {
         reply
     }
 
+    // TODO: subscription streams should be running while loaded not only when toggled/shown.
     fn run(&mut self) {
         self.d_server.start();
         self.config_watcher.start(&self.config_path);
@@ -164,20 +166,18 @@ impl<'a> Orbit<'a> {
             },
         );
 
-        let task_scheduler = {
+        let dispatch_tx = {
             let tx = tx.clone();
-            let (task_exec, task_scheduler) =
-                executor::<(ModuleId, ErasedMsg)>().expect("create task executor");
-
+            let (dispatch_tx, dispatch_rx) = loop_channel::channel::<(ModuleId, ErasedMsg)>();
             let _ = event_loop
                 .handle()
-                .insert_source(task_exec, move |(mid, msg), _, _| {
-                    _ = tx.send(Event::Ui(event::Ui::Module(mid, SctkEvent::message(msg))));
+                .insert_source(dispatch_rx, move |evt, _, _| {
+                    if let loop_channel::Event::Msg((mid, msg)) = evt {
+                        _ = tx.send(Event::Ui(event::Ui::Result(FromDispatch::Task, mid, msg)));
+                    }
                 });
-
-            task_scheduler
+            dispatch_tx
         };
-
         self.module_manager.realize_toggled_modules(
             &mut self.engine,
             &mut self.sctk,
@@ -238,7 +238,7 @@ impl<'a> Orbit<'a> {
                                         self.module_manager.handle_platform_event(
                                             &mut self.engine,
                                             &tx,
-                                            &task_scheduler,
+                                            &dispatch_tx,
                                             &sctk_event,
                                             Some((mid, Some(tid))),
                                         );
@@ -250,7 +250,7 @@ impl<'a> Orbit<'a> {
                                     self.module_manager.handle_platform_event(
                                         &mut self.engine,
                                         &tx,
-                                        &task_scheduler,
+                                        &dispatch_tx,
                                         &sctk_event,
                                         None,
                                     );
@@ -268,8 +268,31 @@ impl<'a> Orbit<'a> {
                                 self.module_manager.handle_platform_event(
                                     &mut self.engine,
                                     &tx,
-                                    &task_scheduler,
+                                    &dispatch_tx,
                                     &event,
+                                    Some((mid, None)),
+                                );
+                            }
+                            event::Ui::Result(from, mid, msg) => {
+                                let (loaded, shown) = if let Some(module) =
+                                    self.module_manager.module(mid)
+                                    && module.is_loaded()
+                                {
+                                    (true, module.toggled)
+                                } else {
+                                    (false, false)
+                                };
+
+                                match from {
+                                    FromDispatch::Subscription if !loaded => continue,
+                                    FromDispatch::Task if !shown => continue,
+                                    _ => (),
+                                }
+                                self.module_manager.handle_platform_event(
+                                    &mut self.engine,
+                                    &tx,
+                                    &dispatch_tx,
+                                    &ui::sctk::SctkEvent::message(msg),
                                     Some((mid, None)),
                                 );
                             }
@@ -278,7 +301,7 @@ impl<'a> Orbit<'a> {
                                     &mut self.engine,
                                     &mut self.sctk,
                                     &tx,
-                                    &task_scheduler,
+                                    &dispatch_tx,
                                     &mid,
                                     true,
                                 );
@@ -518,11 +541,13 @@ impl<'a> Orbit<'a> {
                     &mut self.engine,
                     &mut self.sctk,
                     &tx,
-                    &task_scheduler,
+                    &dispatch_tx,
                     false,
                 );
                 self.error_dialog.render(&mut self.engine);
             }
+
+            self.module_manager.reap_threads();
         }
 
         self.d_server.stop();
