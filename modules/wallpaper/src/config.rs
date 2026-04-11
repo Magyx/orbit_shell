@@ -1,27 +1,30 @@
+use std::{borrow::Cow, path::PathBuf, time::Duration};
+
 use orbit_api::{
     serde::{Deserialize, Serialize},
-    ui::model::Family,
+    ui::{
+        model::{Family, Size},
+        widget::{Element, Length, Overlay, Rectangle, Text},
+    },
 };
-use std::borrow::Cow;
-use std::{path::PathBuf, time::Duration};
+
+use crate::{Msg, PerTarget};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(crate = "orbit_api::serde")]
-pub enum FontFamilyConfig {
-    Monospace,
-    SansSerif,
-    Serif,
-    #[serde(untagged)]
-    Name(String),
+pub struct Config {
+    pub source: PathBuf,
+    pub cycle: String,
+    pub widgets: Vec<WidgetConfig>,
 }
 
-impl From<FontFamilyConfig> for Family {
-    fn from(config: FontFamilyConfig) -> Self {
-        match config {
-            FontFamilyConfig::Monospace => Family::Monospace,
-            FontFamilyConfig::SansSerif => Family::SansSerif,
-            FontFamilyConfig::Serif => Family::Serif,
-            FontFamilyConfig::Name(s) => Family::Name(Cow::Owned(s)),
+impl Default for Config {
+    fn default() -> Self {
+        let home = xdg_user::pictures().unwrap_or_default().unwrap_or_default();
+        Self {
+            source: home.join("Wallpapers"),
+            cycle: "1h".into(),
+            widgets: Vec::new(),
         }
     }
 }
@@ -60,23 +63,53 @@ impl WidgetConfig {
             _ => None,
         }
     }
+
+    pub fn place(&self, target: &PerTarget, on: &mut Overlay<Msg>) {
+        let (element, x, y): (Element<Msg>, f32, f32) = match self {
+            WidgetConfig::Clock {
+                x,
+                y,
+                font_size,
+                font_family,
+                time_format,
+            } => {
+                let time = chrono::Local::now().format(time_format).to_string();
+                let mut text = Text::new(time, *font_size)
+                    .family(Family::Monospace)
+                    .size(Size::splat(Length::Fit));
+                if let Some(family) = font_family {
+                    text = text.family(family.clone().into());
+                }
+                (text.into(), *x, *y)
+            }
+            WidgetConfig::None => (Rectangle::placeholder().into(), 0.0, 0.0),
+        };
+
+        on.push(
+            element,
+            (target.size.width as f32 * x.clamp(0.0, 1.0)).ceil() as i32,
+            (target.size.height as f32 * y.clamp(0.0, 1.0)).ceil() as i32,
+        );
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(crate = "orbit_api::serde")]
-pub struct Config {
-    pub source: PathBuf,
-    pub cycle: String,
-    pub widgets: Vec<WidgetConfig>,
+pub enum FontFamilyConfig {
+    Monospace,
+    SansSerif,
+    Serif,
+    #[serde(untagged)]
+    Name(String),
 }
 
-impl Default for Config {
-    fn default() -> Self {
-        let home = xdg_user::pictures().unwrap_or_default().unwrap_or_default();
-        Self {
-            source: home.join("Wallpapers"),
-            cycle: "1h".into(),
-            widgets: Vec::new(),
+impl From<FontFamilyConfig> for Family {
+    fn from(config: FontFamilyConfig) -> Self {
+        match config {
+            FontFamilyConfig::Monospace => Family::Monospace,
+            FontFamilyConfig::SansSerif => Family::SansSerif,
+            FontFamilyConfig::Serif => Family::Serif,
+            FontFamilyConfig::Name(s) => Family::Name(Cow::Owned(s)),
         }
     }
 }

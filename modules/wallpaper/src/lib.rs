@@ -11,10 +11,10 @@ use orbit_api::{
     ui::{
         el,
         graphics::TargetId,
-        model::{Family, Size},
+        model::Size,
         render::texture::TextureHandle,
         sctk::{Anchor, KeyboardInteractivity, Layer, LayerOptions, Options, OutputSet},
-        widget::{ContentFit, Element, Image, Length, Overlay, Rectangle, Text},
+        widget::{ContentFit, Element, Image, Length, Overlay, Rectangle},
     },
 };
 
@@ -262,47 +262,17 @@ impl OrbitModule for Wallpaper {
     }
 
     fn view(&self, tid: &TargetId) -> Element<Self::Message> {
-        fn place_widget<E>(target: &PerTarget, element: E, x: f32, y: f32, on: &mut Overlay<Msg>)
-        where
-            E: Into<Element<Msg>>,
-        {
-            on.push(
-                element,
-                (target.size.width as f32 * x.clamp(0.0, 1.0)).ceil() as i32,
-                (target.size.height as f32 * y.clamp(0.0, 1.0)).ceil() as i32,
-            );
-        }
-        use Length::Grow;
-
         let Some(target) = self.targets.get(tid) else {
             return Rectangle::placeholder().into();
         };
 
         let mut view = Overlay::new(el![
-            Image::new(Size::splat(Grow), target.tex).fit(ContentFit::Cover)
+            Image::new(Size::splat(Length::Grow), target.tex).fit(ContentFit::Cover)
         ])
-        .size(Size::splat(Grow));
+        .size(Size::splat(Length::Grow));
 
         for widget in self.cfg.widgets.iter() {
-            match widget {
-                WidgetConfig::Clock {
-                    x,
-                    y,
-                    font_size,
-                    font_family,
-                    time_format,
-                } => {
-                    let time = chrono::Local::now().format(time_format).to_string();
-                    let mut text = Text::new(time, *font_size)
-                        .family(Family::Monospace)
-                        .size(Size::splat(Length::Fit));
-                    if let Some(family) = font_family {
-                        text = text.family(family.clone().into());
-                    }
-                    place_widget(target, text, *x, *y, &mut view);
-                }
-                WidgetConfig::None => (),
-            }
+            widget.place(target, &mut view);
         }
 
         view.into()
