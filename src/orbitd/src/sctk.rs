@@ -32,6 +32,40 @@ pub fn take_erased_from_message(evt: &ui::sctk::SctkEvent) -> Option<orbit_api::
 pub struct OrbitHandler;
 
 impl handler::SctkHandler<SctkMessage> for OrbitHandler {
+    fn layer_configure(
+        _conn: &Connection,
+        _qh: &QueueHandle<ui::sctk::state::SctkState>,
+        layer: &smithay_client_toolkit::shell::wlr_layer::LayerSurface,
+        _configure: smithay_client_toolkit::shell::wlr_layer::LayerSurfaceConfigure,
+        _serial: u32,
+    ) -> handler::Emit<SctkMessage> {
+        handler::Emit::One(SctkMessage::SurfaceConfigured(
+            layer.wl_surface().id().protocol_id(),
+        ))
+    }
+    fn window_configure(
+        _conn: &Connection,
+        _qh: &QueueHandle<ui::sctk::state::SctkState>,
+        window: &smithay_client_toolkit::shell::xdg::window::Window,
+        _configure: smithay_client_toolkit::shell::xdg::window::WindowConfigure,
+        _serial: u32,
+    ) -> handler::Emit<SctkMessage> {
+        handler::Emit::One(SctkMessage::SurfaceConfigured(
+            window.wl_surface().id().protocol_id(),
+        ))
+    }
+    fn lock_configure(
+        _conn: &Connection,
+        _qh: &QueueHandle<ui::sctk::state::SctkState>,
+        surface: smithay_client_toolkit::session_lock::SessionLockSurface,
+        _configure: smithay_client_toolkit::session_lock::SessionLockSurfaceConfigure,
+        _serial: u32,
+    ) -> handler::Emit<SctkMessage> {
+        handler::Emit::One(SctkMessage::SurfaceConfigured(
+            surface.wl_surface().id().protocol_id(),
+        ))
+    }
+
     fn new_output(
         _conn: &Connection,
         _qh: &QueueHandle<ui::sctk::state::SctkState>,
@@ -46,6 +80,7 @@ impl handler::SctkHandler<SctkMessage> for OrbitHandler {
     ) -> handler::Emit<SctkMessage> {
         handler::Emit::One(SctkMessage::OutputCreated)
     }
+
     fn closed(
         _conn: &Connection,
         _qh: &QueueHandle<ui::sctk::state::SctkState>,
@@ -55,7 +90,6 @@ impl handler::SctkHandler<SctkMessage> for OrbitHandler {
             layer.wl_surface().id().protocol_id(),
         ))
     }
-
     fn request_close(
         _conn: &Connection,
         _qh: &QueueHandle<ui::sctk::state::SctkState>,
