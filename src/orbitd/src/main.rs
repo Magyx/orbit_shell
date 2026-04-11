@@ -200,10 +200,21 @@ impl<'a> Orbit<'a> {
 
                         match ui_event {
                             event::Ui::Orbit(msg) => match msg {
-                                event::SctkMessage::SurfaceDestroyed(id) => {
-                                    tracing::info!(id = id, "entered output removed");
+                                event::SctkMessage::SurfaceConfigured(id) => {
+                                    let Some(sid) = self.sctk.state.surface_id_by_protocol_id(id)
+                                    else {
+                                        continue;
+                                    };
 
-                                    let sid = SurfaceId::new(id);
+                                    if let Some(&(_, mid)) = self.module_manager.by_surface(sid) {
+                                        runtime_tx.send(Event::Ui(event::Ui::ForceRedraw(mid)));
+                                    }
+                                }
+                                event::SctkMessage::SurfaceDestroyed(id) => {
+                                    let Some(&sid) = self.sctk.state.surface_id_by_protocol_id(id)
+                                    else {
+                                        continue;
+                                    };
 
                                     self.sctk.state.remove_surface_by_surface_id(sid);
                                     self.module_manager.remove_sid(
@@ -354,15 +365,12 @@ impl<'a> Orbit<'a> {
                             _ = resp_tx.send(self.format_commands(&module_name));
                         }
                         DbusEvent::Toggle(module_name) => {
-                            let (mid, module) = {
-                                if let Some((mid, module)) =
-                                    self.module_manager.find_by_name(&module_name)
-                                    && module.is_loaded()
-                                {
-                                    (mid, module)
-                                } else {
-                                    continue;
-                                }
+                            let Some((mid, module)) = self
+                                .module_manager
+                                .find_by_name(&module_name)
+                                .filter(|(_, m)| m.is_loaded())
+                            else {
+                                continue;
                             };
 
                             if module.toggled {
