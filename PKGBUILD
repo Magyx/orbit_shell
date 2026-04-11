@@ -3,6 +3,7 @@ pkgname=(
   'orbit-git'
   'orbit-module-wallpaper-git'
   'orbit-module-bar-git'
+  'orbit-module-launcher-git'
 )
 pkgver=git
 pkgrel=1
@@ -39,7 +40,8 @@ build() {
     -p orbitd \
     -p orbit \
     -p wallpaper \
-    -p bar
+    -p bar \
+    -p launcher
 }
 
 package_orbit-git() {
@@ -91,5 +93,18 @@ package_orbit-module-bar-git() {
 
   install -Dm644 target/release/libbar.so \
     "$pkgdir/usr/lib/orbit/modules/bar.so"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
+
+package_orbit-module-launcher-git() {
+  pkgdesc='Orbit module: launcher'
+  depends=('orbit-git')
+  provides=("orbit-module-launcher=${pkgver}")
+  conflicts=('orbit-module-launcher')
+
+  cd "$srcdir/orbitshell"
+
+  install -Dm644 target/release/liblauncher.so \
+    "$pkgdir/usr/lib/orbit/modules/launcher.so"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }

@@ -1,0 +1,13 @@
+[package]
+name = "launcher"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+orbit-api = { path = "../../src/orbit-api" }
+
+async-process = "2.5.0"
+image = "0.25.10"
