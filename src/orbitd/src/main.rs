@@ -3,7 +3,7 @@ use std::{fmt::Write, path::PathBuf, sync::mpsc};
 
 use calloop::{EventLoop, channel as loop_channel};
 use smithay_client_toolkit::reexports::calloop_wayland_source::WaylandSource;
-use ui::sctk::{SctkEvent, SurfaceId, state::SctkState};
+use ui::sctk::{SctkEvent, state::SctkState};
 
 use orbit_api::{Engine, ErasedMsg};
 use orbit_dbus::DbusEvent;
@@ -11,7 +11,7 @@ use orbit_dbus::DbusEvent;
 use crate::{
     config::{Config, ConfigEvent, ConfigInstruction, ConfigWatcher, compare_configs},
     dialog::ErrorDialog,
-    event::FromDispatch,
+    event::{FromDispatch, RuntimeSender},
     module::ModuleInfo,
     module_manager::ModuleManager,
     sctk::SctkApp,
@@ -136,7 +136,6 @@ impl<'a> Orbit<'a> {
         self.d_server.start();
         self.config_watcher.start(&self.config_path);
 
-        let tx = self.tx.clone();
         let mut event_loop: EventLoop<SctkState> = EventLoop::try_new().expect("err");
         let _ = WaylandSource::new(self.sctk.conn.clone(), self.sctk.take_event_queue())
             .insert(event_loop.handle());
@@ -145,7 +144,7 @@ impl<'a> Orbit<'a> {
             self.sctk_rx.take().expect("sctk_rx already taken"),
             |evt, _, _| {
                 if let loop_channel::Event::Msg(e) = evt {
-                    let _ = tx.send(Event::Ui(event::Ui::Sctk(e)));
+                    let _ = self.tx.send(Event::Ui(event::Ui::Sctk(e)));
                 }
             },
         );
@@ -153,7 +152,7 @@ impl<'a> Orbit<'a> {
             self.dbus_rx.take().expect("dbus_rx already taken"),
             |evt, _, _| {
                 if let loop_channel::Event::Msg(e) = evt {
-                    let _ = tx.send(Event::Dbus(e));
+                    let _ = self.tx.send(Event::Dbus(e));
                 }
             },
         );
@@ -161,13 +160,13 @@ impl<'a> Orbit<'a> {
             self.config_rx.take().expect("config_rx already taken"),
             |evt, _, _| {
                 if let loop_channel::Event::Msg(e) = evt {
-                    let _ = tx.send(Event::Config(e));
+                    let _ = self.tx.send(Event::Config(e));
                 }
             },
         );
 
         let dispatch_tx = {
-            let tx = tx.clone();
+            let tx = self.tx.clone();
             let (dispatch_tx, dispatch_rx) = loop_channel::channel::<(ModuleId, ErasedMsg)>();
             let _ = event_loop
                 .handle()
@@ -178,10 +177,12 @@ impl<'a> Orbit<'a> {
                 });
             dispatch_tx
         };
+
+        let runtime_tx = RuntimeSender::new(self.tx.clone(), event_loop.get_signal());
         self.module_manager.realize_toggled_modules(
             &mut self.engine,
             &mut self.sctk,
-            &tx,
+            &runtime_tx,
             &mut event_loop.handle(),
             &self.config,
         );
@@ -237,7 +238,7 @@ impl<'a> Orbit<'a> {
                                     {
                                         self.module_manager.handle_platform_event(
                                             &mut self.engine,
-                                            &tx,
+                                            &runtime_tx,
                                             &dispatch_tx,
                                             &sctk_event,
                                             Some((mid, Some(tid))),
@@ -249,7 +250,7 @@ impl<'a> Orbit<'a> {
                                 } else {
                                     self.module_manager.handle_platform_event(
                                         &mut self.engine,
-                                        &tx,
+                                        &runtime_tx,
                                         &dispatch_tx,
                                         &sctk_event,
                                         None,
@@ -267,7 +268,7 @@ impl<'a> Orbit<'a> {
 
                                 self.module_manager.handle_platform_event(
                                     &mut self.engine,
-                                    &tx,
+                                    &runtime_tx,
                                     &dispatch_tx,
                                     &event,
                                     Some((mid, None)),
@@ -290,7 +291,7 @@ impl<'a> Orbit<'a> {
                                 }
                                 self.module_manager.handle_platform_event(
                                     &mut self.engine,
-                                    &tx,
+                                    &runtime_tx,
                                     &dispatch_tx,
                                     &ui::sctk::SctkEvent::message(msg),
                                     Some((mid, None)),
@@ -300,7 +301,7 @@ impl<'a> Orbit<'a> {
                                 self.module_manager.render_module(
                                     &mut self.engine,
                                     &mut self.sctk,
-                                    &tx,
+                                    &runtime_tx,
                                     &dispatch_tx,
                                     &mid,
                                     true,
@@ -320,7 +321,7 @@ impl<'a> Orbit<'a> {
                                     self.module_manager.realize_toggled_modules(
                                         &mut self.engine,
                                         &mut self.sctk,
-                                        &tx,
+                                        &runtime_tx,
                                         &mut event_loop.handle(),
                                         &self.config,
                                     );
@@ -375,7 +376,7 @@ impl<'a> Orbit<'a> {
                                 self.module_manager.realize_module(
                                     &mut self.engine,
                                     &mut self.sctk,
-                                    &tx,
+                                    &runtime_tx,
                                     &mut event_loop.handle(),
                                     &self.config,
                                     &mid,
@@ -401,7 +402,7 @@ impl<'a> Orbit<'a> {
                                 continue;
                             };
 
-                            let _ = tx.send(Event::Ui(event::Ui::Module(
+                            runtime_tx.send(Event::Ui(event::Ui::Module(
                                 mid,
                                 SctkEvent::message(message),
                             )));
@@ -421,8 +422,8 @@ impl<'a> Orbit<'a> {
                             let instructions = match compare_configs(&self.config, &new_config) {
                                 Ok(i) => i,
                                 Err(e) => {
-                                    let _ =
-                                        tx.send(Event::Config(ConfigEvent::Err(vec![e.into()])));
+                                    runtime_tx
+                                        .send(Event::Config(ConfigEvent::Err(vec![e.into()])));
                                     continue;
                                 }
                             };
@@ -475,7 +476,7 @@ impl<'a> Orbit<'a> {
                                         self.module_manager.realize_module(
                                             &mut self.engine,
                                             &mut self.sctk,
-                                            &tx,
+                                            &runtime_tx,
                                             &mut event_loop.handle(),
                                             &new_config,
                                             &mid,
@@ -506,7 +507,7 @@ impl<'a> Orbit<'a> {
                                         self.module_manager.realize_module_with_opts(
                                             &mut self.engine,
                                             &mut self.sctk,
-                                            &tx,
+                                            &runtime_tx,
                                             &mut event_loop.handle(),
                                             &new_config,
                                             &mid,
@@ -516,11 +517,11 @@ impl<'a> Orbit<'a> {
                                         self.module_manager
                                             .remove_subscriptions(&mut event_loop.handle(), &mid);
                                         self.module_manager.add_subscriptions(
-                                            &tx,
+                                            &runtime_tx,
                                             &mut event_loop.handle(),
                                             &mid,
                                         );
-                                        let _ = tx.send(Event::Ui(event::Ui::ForceRedraw(mid)));
+                                        runtime_tx.send(Event::Ui(event::Ui::ForceRedraw(mid)));
                                     }
                                 }
                             }
@@ -529,7 +530,7 @@ impl<'a> Orbit<'a> {
                                 self.config = new_config;
                                 self.error_dialog.hide(&mut self.engine, &mut self.sctk);
                             } else if !errors.is_empty() {
-                                let _ = tx.send(Event::Config(ConfigEvent::Err(errors)));
+                                runtime_tx.send(Event::Config(ConfigEvent::Err(errors)));
                             }
                         }
                         ConfigEvent::Err(errors) => {
@@ -545,7 +546,7 @@ impl<'a> Orbit<'a> {
                 self.module_manager.render(
                     &mut self.engine,
                     &mut self.sctk,
-                    &tx,
+                    &runtime_tx,
                     &dispatch_tx,
                     false,
                 );
