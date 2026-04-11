@@ -1,5 +1,5 @@
 use std::{
-    sync::{Arc, mpsc},
+    sync::Arc,
     thread::JoinHandle,
     time::{Duration, SystemTime},
 };
@@ -11,7 +11,10 @@ use calloop::{
 use orbit_api::{BoxStreamFactory, ErasedMsg, SendError, Subscription, SubscriptionSender};
 use ui::sctk::state::SctkState;
 
-use crate::{event, module::ModuleId};
+use crate::{
+    event::{self, RuntimeSender},
+    module::ModuleId,
+};
 
 pub struct StreamHandle {
     pub rx_token: RegistrationToken,
@@ -19,7 +22,7 @@ pub struct StreamHandle {
 }
 
 fn handle_timer(
-    tx: &mpsc::Sender<event::Event>,
+    tx: &RuntimeSender,
     loop_handle: &mut LoopHandle<SctkState>,
     mid: ModuleId,
     message: ErasedMsg,
@@ -31,7 +34,7 @@ fn handle_timer(
         .insert_source(timer, {
             let ui_tx = tx.clone();
             move |_, _, _| {
-                let _ = ui_tx.send(event::Event::Ui(event::Ui::Result(
+                ui_tx.send(event::Event::Ui(event::Ui::Result(
                     event::FromDispatch::Subscription,
                     mid,
                     message.clone_for_send(),
@@ -59,7 +62,7 @@ fn delay_to_next_tick(every: Duration) -> Duration {
 }
 
 fn handle_timer_synced(
-    tx: &mpsc::Sender<event::Event>,
+    tx: &RuntimeSender,
     loop_handle: &mut LoopHandle<SctkState>,
     mid: ModuleId,
     message: ErasedMsg,
@@ -71,7 +74,7 @@ fn handle_timer_synced(
         .insert_source(Timer::from_duration(delay), {
             let ui_tx = tx.clone();
             move |deadline, _, _| {
-                let _ = ui_tx.send(event::Event::Ui(event::Ui::Result(
+                ui_tx.send(event::Event::Ui(event::Ui::Result(
                     event::FromDispatch::Subscription,
                     mid,
                     message.clone_for_send(),
@@ -88,7 +91,7 @@ fn handle_timer_synced(
 
 pub fn handle_subs(
     subs: Vec<Subscription<ErasedMsg>>,
-    tx: &mpsc::Sender<event::Event>,
+    tx: &RuntimeSender,
     loop_handle: &mut LoopHandle<SctkState>,
     mid: &ModuleId,
     tokens: &mut Vec<RegistrationToken>,
@@ -117,7 +120,7 @@ pub fn handle_subs(
 
 pub fn handle_streams(
     streams: Vec<BoxStreamFactory<ErasedMsg>>,
-    tx: &mpsc::Sender<event::Event>,
+    tx: &RuntimeSender,
     loop_handle: &mut LoopHandle<SctkState>,
     mid: &ModuleId,
     handles: &mut Vec<StreamHandle>,
@@ -131,7 +134,7 @@ pub fn handle_streams(
         let rx_token = loop_handle
             .insert_source(stream_rx, move |evt, _, _| {
                 if let calloop::channel::Event::Msg(msg) = evt {
-                    let _ = ui_tx.send(event::Event::Ui(event::Ui::Result(
+                    ui_tx.send(event::Event::Ui(event::Ui::Result(
                         event::FromDispatch::Subscription,
                         mid,
                         msg,

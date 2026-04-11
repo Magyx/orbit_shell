@@ -3,7 +3,7 @@ use std::{
     collections::HashMap,
     fs,
     path::{Path, PathBuf},
-    sync::{Arc, mpsc},
+    sync::Arc,
 };
 
 use calloop::{LoopHandle, RegistrationToken, channel as loop_channel};
@@ -15,6 +15,7 @@ use ui::{
     sctk::{SctkEvent, SurfaceId, state::SctkState},
 };
 
+use crate::event::RuntimeSender;
 use crate::{
     api_utils::{self, UnraveledTask},
     config::{self, Config},
@@ -192,7 +193,7 @@ impl ModuleManager {
         &mut self,
         engine: &mut Engine<'_>,
         sctk: &mut SctkApp,
-        tx: &mpsc::Sender<Event>,
+        tx: &RuntimeSender,
         loop_handle: &mut LoopHandle<SctkState>,
         config: &Config,
         mid: &ModuleId,
@@ -242,22 +243,22 @@ impl ModuleManager {
         mut utask: Option<UnraveledTask>,
         mid: &ModuleId,
         module: &ModuleInfo,
-        tx: &mpsc::Sender<Event>,
+        tx: &RuntimeSender,
         dispatch_tx: &loop_channel::Sender<(ModuleId, ErasedMsg)>,
         pending_threads: &mut Vec<JoinHandle<()>>,
     ) {
         if let Some(ut) = utask.as_mut() {
             match ut.action() {
                 api_utils::Action::ExitOrbit => {
-                    _ = tx.send(Event::Dbus(DbusEvent::Exit));
+                    tx.send(Event::Dbus(DbusEvent::Exit));
                     return;
                 }
                 api_utils::Action::ExitModule => {
-                    _ = tx.send(Event::Dbus(DbusEvent::Toggle(module.name.clone())));
+                    tx.send(Event::Dbus(DbusEvent::Toggle(module.name.clone())));
                     return;
                 }
                 api_utils::Action::RedrawModule => {
-                    _ = tx.send(Event::Ui(event::Ui::ForceRedraw(*mid)));
+                    tx.send(Event::Ui(event::Ui::ForceRedraw(*mid)));
                 }
                 api_utils::Action::None => (),
             }
@@ -314,7 +315,7 @@ impl ModuleManager {
 
     pub fn add_subscriptions(
         &mut self,
-        tx: &mpsc::Sender<Event>,
+        tx: &RuntimeSender,
         loop_handle: &mut LoopHandle<SctkState>,
         mid: &ModuleId,
     ) {
@@ -385,7 +386,7 @@ impl ModuleManager {
         &mut self,
         engine: &mut Engine<'_>,
         sctk: &mut SctkApp,
-        tx: &mpsc::Sender<Event>,
+        tx: &RuntimeSender,
         loop_handle: &mut LoopHandle<SctkState>,
         config: &Config,
     ) {
@@ -400,7 +401,7 @@ impl ModuleManager {
         &mut self,
         engine: &mut Engine<'_>,
         sctk: &mut SctkApp,
-        tx: &mpsc::Sender<Event>,
+        tx: &RuntimeSender,
         loop_handle: &mut LoopHandle<SctkState>,
         config: &Config,
         mid: &ModuleId,
@@ -413,7 +414,7 @@ impl ModuleManager {
         &mut self,
         engine: &mut Engine<'_>,
         sctk: &mut SctkApp,
-        tx: &mpsc::Sender<Event>,
+        tx: &RuntimeSender,
         loop_handle: &mut LoopHandle<SctkState>,
         config: &Config,
         mid: &ModuleId,
@@ -456,7 +457,7 @@ impl ModuleManager {
     pub fn handle_platform_event(
         &mut self,
         engine: &mut Engine,
-        tx: &mpsc::Sender<Event>,
+        tx: &RuntimeSender,
         task_tx: &loop_channel::Sender<(ModuleId, ErasedMsg)>,
         event: &SctkEvent,
         id: Option<(ModuleId, Option<TargetId>)>,
@@ -464,7 +465,7 @@ impl ModuleManager {
         #![allow(clippy::too_many_arguments)]
         fn handle_platform_event_internal(
             engine: &mut Engine,
-            tx: &mpsc::Sender<Event>,
+            tx: &RuntimeSender,
             task_tx: &loop_channel::Sender<(ModuleId, ErasedMsg)>,
             event: &SctkEvent,
             mid: &ModuleId,
@@ -542,7 +543,7 @@ impl ModuleManager {
         &mut self,
         engine: &mut Engine,
         sctk: &mut SctkApp,
-        tx: &mpsc::Sender<Event>,
+        tx: &RuntimeSender,
         task_tx: &loop_channel::Sender<(ModuleId, ErasedMsg)>,
         mid: &ModuleId,
         tid: &TargetId,
@@ -579,7 +580,7 @@ impl ModuleManager {
         &mut self,
         engine: &mut Engine,
         sctk: &mut SctkApp,
-        tx: &mpsc::Sender<Event>,
+        tx: &RuntimeSender,
         task_tx: &loop_channel::Sender<(ModuleId, ErasedMsg)>,
         mid: &ModuleId,
         poll_override: bool,
@@ -597,7 +598,7 @@ impl ModuleManager {
         &mut self,
         engine: &mut Engine,
         sctk: &mut SctkApp,
-        tx: &mpsc::Sender<Event>,
+        tx: &RuntimeSender,
         task_tx: &loop_channel::Sender<(ModuleId, ErasedMsg)>,
         poll_override: bool,
     ) {
