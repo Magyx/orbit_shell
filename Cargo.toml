@@ -9,6 +9,7 @@ members = [
   "modules/wallpaper",
   "modules/bar",
   "modules/cliphistory",
+  "modules/launcher",
 ]
 
 [workspace.dependencies]
