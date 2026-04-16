@@ -1,6 +1,6 @@
 pkgbase = orbitshell-git
 	pkgdesc = Orbit shell daemon and CLI
-	pkgver = 0.1.0.r46.gc65f5fa
+	pkgver = git
 	pkgrel = 1
 	url = https://github.com/Magyx/orbit_shell
 	arch = x86_64
@@ -24,19 +24,25 @@ pkgname = orbit-git
 	optdepends = vulkan-intel: Intel Vulkan driver
 	optdepends = vulkan-radeon: AMD Radeon Vulkan driver
 	optdepends = nvidia-utils: NVIDIA Vulkan driver
-	provides = orbit=0.1.0.r46.gc65f5fa
-	provides = orbitd=0.1.0.r46.gc65f5fa
+	provides = orbit=git
+	provides = orbitd=git
 	conflicts = orbit
 	conflicts = orbitd
 
 pkgname = orbit-module-wallpaper-git
 	pkgdesc = Orbit module: wallpaper
 	depends = orbit-git
-	provides = orbit-module-wallpaper=0.1.0.r46.gc65f5fa
+	provides = orbit-module-wallpaper=git
 	conflicts = orbit-module-wallpaper
 
 pkgname = orbit-module-bar-git
 	pkgdesc = Orbit module: bar
 	depends = orbit-git
-	provides = orbit-module-bar=0.1.0.r46.gc65f5fa
+	provides = orbit-module-bar=git
 	conflicts = orbit-module-bar
+
+pkgname = orbit-module-launcher-git
+	pkgdesc = Orbit module: launcher
+	depends = orbit-git
+	provides = orbit-module-launcher=git
+	conflicts = orbit-module-launcher
