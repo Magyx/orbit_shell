@@ -7,10 +7,6 @@ edition = "2024"
 crate-type = ["cdylib"]
 
 [dependencies]
-cosmic-text = { version = "0.14.2", default-features = false, features = [
-  "fontconfig",
-  "swash",
-] }
 orbit-api = { path = "../../src/orbit-api" }
 pam = "0.8.0"
 libc = "0.2.185"

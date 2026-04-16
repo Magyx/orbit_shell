@@ -1352,7 +1352,6 @@ dependencies = [
 name = "lockscreen"
 version = "0.1.0"
 dependencies = [
- "cosmic-text",
  "libc",
  "orbit-api",
  "pam",
