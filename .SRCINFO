@@ -46,3 +46,9 @@ pkgname = orbit-module-launcher-git
 	depends = orbit-git
 	provides = orbit-module-launcher=git
 	conflicts = orbit-module-launcher
+
+pkgname = orbit-module-lockscreen-git
+	pkgdesc = Orbit module: lockscreen
+	depends = orbit-git
+	provides = orbit-module-lockscreen=git
+	conflicts = orbit-module-lockscreen

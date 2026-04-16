@@ -9,6 +9,7 @@ members = [
   "modules/wallpaper",
   "modules/bar",
   "modules/launcher",
+  "modules/lockscreen",
 ]
 
 [workspace.dependencies]

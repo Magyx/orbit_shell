@@ -4,6 +4,7 @@ pkgname=(
   'orbit-module-wallpaper-git'
   'orbit-module-bar-git'
   'orbit-module-launcher-git'
+  'orbit-module-lockscreen-git'
 )
 pkgver=git
 pkgrel=1
@@ -41,7 +42,8 @@ build() {
     -p orbit \
     -p wallpaper \
     -p bar \
-    -p launcher
+    -p launcher \
+    -p lockscreen
 }
 
 package_orbit-git() {
@@ -106,5 +108,18 @@ package_orbit-module-launcher-git() {
 
   install -Dm644 target/release/liblauncher.so \
     "$pkgdir/usr/lib/orbit/modules/launcher.so"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
+
+package_orbit-module-lockscreen-git() {
+  pkgdesc='Orbit module: lockscreen'
+  depends=('orbit-git')
+  provides=("orbit-module-lockscreen=${pkgver}")
+  conflicts=('orbit-module-lockscreen')
+
+  cd "$srcdir/orbitshell"
+
+  install -Dm644 target/release/liblockscreen.so \
+    "$pkgdir/usr/lib/orbit/modules/lockscreen.so"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }
