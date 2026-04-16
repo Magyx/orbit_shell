@@ -9,6 +9,7 @@ pub struct Config {
     pub icon_size: u32,
     /// "top", "center", or "bottom"
     pub position: String,
+    pub launch_options: String,
 }
 
 impl Default for Config {
@@ -19,6 +20,7 @@ impl Default for Config {
             max_results: 8,
             icon_size: 32,
             position: "center".to_owned(),
+            launch_options: "".to_owned(),
         }
     }
 }

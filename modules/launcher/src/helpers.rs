@@ -230,24 +230,32 @@ pub fn search(apps: &[RawEntry], query: &str, max: usize) -> Msg {
     Msg::Results(scored.into_iter().map(|(i, _)| i).collect())
 }
 
-pub async fn launch_app(exec: String) -> Msg {
-    let args = parse_exec_args(&exec);
-    if args.is_empty() {
+pub async fn launch_app(exec: String, mut cmd: Vec<String>) -> Msg {
+    let post = match cmd.iter().position(|c| c == "%command%") {
+        Some(idx) => cmd.drain(idx..).skip(1).collect::<Vec<_>>(),
+        None => Vec::new(),
+    };
+
+    if !parse_exec_args(&exec, &mut cmd) {
         return Msg::Launched;
     }
 
-    let _ = async_process::Command::new(&args[0])
-        .args(&args[1..])
-        .stdin(async_process::Stdio::null())
-        .stdout(async_process::Stdio::null())
-        .stderr(async_process::Stdio::null())
-        .spawn();
+    cmd.extend(post);
+
+    if let Some(program) = cmd.first() {
+        let _ = async_process::Command::new(program)
+            .args(&cmd[1..])
+            .stdin(async_process::Stdio::null())
+            .stdout(async_process::Stdio::null())
+            .stderr(async_process::Stdio::null())
+            .spawn();
+    }
 
     Msg::Launched
 }
 
-fn parse_exec_args(exec: &str) -> Vec<String> {
-    let mut args = Vec::new();
+pub fn parse_exec_args(exec: &str, args: &mut Vec<String>) -> bool {
+    let mut has_exec = false;
     let mut current = String::new();
     let mut in_quotes = false;
     let mut quote_char = ' ';
@@ -271,6 +279,7 @@ fn parse_exec_args(exec: &str) -> Vec<String> {
             ' ' | '\t' if !in_quotes => {
                 if !current.is_empty() {
                     args.push(std::mem::take(&mut current));
+                    has_exec = true;
                 }
             }
             _ => current.push(c),
@@ -278,6 +287,7 @@ fn parse_exec_args(exec: &str) -> Vec<String> {
     }
     if !current.is_empty() {
         args.push(current);
+        has_exec = true;
     }
-    args
+    has_exec
 }

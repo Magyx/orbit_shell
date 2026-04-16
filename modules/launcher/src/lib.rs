@@ -47,6 +47,8 @@ pub enum Msg {
 #[derive(Default)]
 pub struct Launcher {
     cfg: Config,
+    launch_options: Vec<String>,
+
     query: String,
     apps: Arc<Vec<RawEntry>>,
     entries: Vec<AppEntry>,
@@ -165,8 +167,14 @@ impl OrbitModule for Launcher {
     ) -> bool {
         let size_changed = self.cfg.width != config.width || self.cfg.height != config.height;
         let pos_changed = self.cfg.position != config.position;
+        let command_changed = self.cfg.launch_options != config.launch_options;
         self.cfg = config;
-        if size_changed || pos_changed {
+        if size_changed || pos_changed || command_changed {
+            if command_changed {
+                let mut launch_options = Vec::new();
+                helpers::parse_exec_args(&self.cfg.launch_options, &mut launch_options);
+                self.launch_options = launch_options;
+            }
             if let Options::Layer(layer) = options {
                 layer.size.width = self.cfg.width;
                 layer.size.height = self.cfg.height;
@@ -230,7 +238,8 @@ impl OrbitModule for Launcher {
                         self.query.clear();
                         self.results.clear();
                         self.selected = 0;
-                        Task::spawn(async move { helpers::launch_app(exec).await })
+                        let cmd = self.launch_options.clone();
+                        Task::spawn(async move { helpers::launch_app(exec, cmd).await })
                     } else {
                         Task::None
                     }
