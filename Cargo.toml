@@ -2,10 +2,10 @@
 resolver = "3"
 members = [
   "src/orbit-api",
-  "src/orbit",
   "src/orbitd",
   "src/orbit-dbus",
-  "xtask",
+  "tools/xtask",
+  "tools/orbit-cli",
   "modules/wallpaper",
   "modules/bar",
   "modules/launcher",
