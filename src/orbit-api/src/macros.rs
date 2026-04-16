@@ -1,5 +1,3 @@
-// TODO: look into making the commands be (name, Msg::Variant) => makes it easy to push into
-// existing loop
 #[macro_export]
 macro_rules! orbit_plugin {
     (
