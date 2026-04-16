@@ -23,11 +23,11 @@ mod api_utils;
 mod config;
 mod dbus;
 mod dialog;
+mod dispatch;
 mod event;
 mod module;
 mod module_manager;
 mod sctk;
-mod subscriptions;
 mod trace;
 
 struct Orbit<'a> {

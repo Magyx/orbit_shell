@@ -8,21 +8,19 @@ use std::{
 
 use calloop::{LoopHandle, RegistrationToken, channel as loop_channel};
 use orbit_api::{Engine, ErasedMsg};
-use orbit_dbus::DbusEvent;
 use ui::{
     graphics::TargetId,
     render::pipeline::PipelineKey,
     sctk::{SctkEvent, SurfaceId, state::SctkState},
 };
 
+use crate::dispatch::StreamHandle;
 use crate::event::RuntimeSender;
 use crate::{
     api_utils::{self, UnraveledTask},
     config::{self, Config},
-    event::{self, Event},
     module::{ModuleId, ModuleInfo},
     sctk::{CreatedSurface, SctkApp},
-    subscriptions::StreamHandle,
 };
 
 pub struct ModuleManager {
@@ -239,47 +237,6 @@ impl ModuleManager {
         redraw
     }
 
-    fn handle_task(
-        mut utask: Option<UnraveledTask>,
-        mid: &ModuleId,
-        module: &ModuleInfo,
-        tx: &RuntimeSender,
-        dispatch_tx: &loop_channel::Sender<(ModuleId, ErasedMsg)>,
-        pending_threads: &mut Vec<JoinHandle<()>>,
-    ) {
-        if let Some(ut) = utask.as_mut() {
-            match ut.action() {
-                api_utils::Action::ExitOrbit => {
-                    tx.send(Event::Dbus(DbusEvent::Exit));
-                    return;
-                }
-                api_utils::Action::ExitModule => {
-                    tx.send(Event::Dbus(DbusEvent::Toggle(module.name.clone())));
-                    return;
-                }
-                api_utils::Action::RedrawModule => {
-                    tx.send(Event::Ui(event::Ui::ForceRedraw(*mid)));
-                }
-                api_utils::Action::None => (),
-            }
-
-            if let Some(pending) = ut.tasks.take() {
-                for task in pending {
-                    let mid = *mid;
-                    let result_tx = dispatch_tx.clone();
-                    let thread = std::thread::Builder::new()
-                        .name(format!("orbit-task-{}", mid.0))
-                        .spawn(move || {
-                            let msg = futures_lite::future::block_on(task);
-                            let _ = result_tx.send((mid, msg.clone_for_send()));
-                        })
-                        .expect("spawn task thread");
-                    pending_threads.push(thread);
-                }
-            }
-        }
-    }
-
     pub fn rediscover_modules(
         &mut self,
         engine: &mut Engine<'_>,
@@ -329,13 +286,13 @@ impl ModuleManager {
         let usub = api_utils::unravel_sub(module.as_ref().subscriptions());
 
         let mut tokens = Vec::new();
-        super::subscriptions::handle_subs(usub.subs, tx, loop_handle, mid, &mut tokens);
+        super::dispatch::handle_subs(usub.subs, tx, loop_handle, mid, &mut tokens);
         if !tokens.is_empty() {
             self.sub_tokens.entry(*mid).or_default().append(&mut tokens);
         }
 
         let mut handles = Vec::new();
-        super::subscriptions::handle_streams(usub.streams, tx, loop_handle, mid, &mut handles);
+        super::dispatch::handle_streams(usub.streams, tx, loop_handle, mid, &mut handles);
         if !tokens.is_empty() {
             self.dispatch_tokens
                 .entry(*mid)
@@ -458,7 +415,7 @@ impl ModuleManager {
         &mut self,
         engine: &mut Engine,
         tx: &RuntimeSender,
-        task_tx: &loop_channel::Sender<(ModuleId, ErasedMsg)>,
+        dispath_tx: &loop_channel::Sender<(ModuleId, ErasedMsg)>,
         event: &SctkEvent,
         id: Option<(ModuleId, Option<TargetId>)>,
     ) {
@@ -472,18 +429,20 @@ impl ModuleManager {
             module: &mut ModuleInfo,
             tid: &TargetId,
             pending_threads: &mut Vec<JoinHandle<()>>,
+            task: &mut Option<UnraveledTask>,
         ) {
-            let mut task = None;
+            *task = None;
             engine.handle_platform_event(
                 tid,
                 event,
                 &mut ModuleManager::do_update,
-                &mut (module, &mut task),
+                &mut (module, task),
                 tid,
             );
-            ModuleManager::handle_task(task, mid, module, tx, task_tx, pending_threads);
+            super::dispatch::handle_task(task, mid, module, tx, task_tx, pending_threads);
         }
 
+        let mut task = None;
         if let Some((mid, o_tid)) = id
             && let Some(module) = self.modules.get_mut(&mid)
         {
@@ -491,12 +450,13 @@ impl ModuleManager {
                 handle_platform_event_internal(
                     engine,
                     tx,
-                    task_tx,
+                    dispath_tx,
                     event,
                     &mid,
                     module,
                     &tid,
                     &mut self.pending_threads,
+                    &mut task,
                 );
             } else {
                 let Some(targets) = self.by_module.get(&mid) else {
@@ -507,12 +467,13 @@ impl ModuleManager {
                     handle_platform_event_internal(
                         engine,
                         tx,
-                        task_tx,
+                        dispath_tx,
                         event,
                         &mid,
                         module,
                         &tid,
                         &mut self.pending_threads,
+                        &mut task,
                     );
                 }
             }
@@ -526,12 +487,13 @@ impl ModuleManager {
                     handle_platform_event_internal(
                         engine,
                         tx,
-                        task_tx,
+                        dispath_tx,
                         event,
                         mid,
                         module,
                         &tid,
                         &mut self.pending_threads,
+                        &mut task,
                     );
                 }
             }
@@ -572,7 +534,14 @@ impl ModuleManager {
                 &|tid, s: &ModuleInfo| s.as_ref().view(tid),
                 module,
             );
-            Self::handle_task(task, mid, module, tx, task_tx, &mut self.pending_threads);
+            super::dispatch::handle_task(
+                &mut task,
+                mid,
+                module,
+                tx,
+                task_tx,
+                &mut self.pending_threads,
+            );
         }
     }
 

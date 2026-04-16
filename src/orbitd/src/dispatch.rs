@@ -5,15 +5,16 @@ use std::{
 };
 
 use calloop::{
-    LoopHandle, RegistrationToken,
+    LoopHandle, RegistrationToken, channel as loop_channel,
     timer::{TimeoutAction, Timer},
 };
 use orbit_api::{BoxStreamFactory, ErasedMsg, SendError, Subscription, SubscriptionSender};
 use ui::sctk::state::SctkState;
 
 use crate::{
+    api_utils::{self, UnraveledTask},
     event::{self, RuntimeSender},
-    module::ModuleId,
+    module::{ModuleId, ModuleInfo},
 };
 
 pub struct StreamHandle {
@@ -155,5 +156,48 @@ pub fn handle_streams(
             .expect("spawn stream thread");
 
         handles.push(StreamHandle { rx_token, thread });
+    }
+}
+
+pub fn handle_task(
+    utask: &mut Option<UnraveledTask>,
+    mid: &ModuleId,
+    module: &ModuleInfo,
+    tx: &RuntimeSender,
+    dispatch_tx: &loop_channel::Sender<(ModuleId, ErasedMsg)>,
+    pending_threads: &mut Vec<JoinHandle<()>>,
+) {
+    if let Some(ut) = utask.as_mut() {
+        match ut.action() {
+            api_utils::Action::ExitOrbit => {
+                tx.send(event::Event::Dbus(orbit_dbus::DbusEvent::Exit));
+                return;
+            }
+            api_utils::Action::ExitModule => {
+                tx.send(event::Event::Dbus(orbit_dbus::DbusEvent::Toggle(
+                    module.name.clone(),
+                )));
+                return;
+            }
+            api_utils::Action::RedrawModule => {
+                tx.send(event::Event::Ui(event::Ui::ForceRedraw(*mid)));
+            }
+            api_utils::Action::None => (),
+        }
+
+        if let Some(pending) = ut.tasks.take() {
+            for task in pending {
+                let mid = *mid;
+                let result_tx = dispatch_tx.clone();
+                let thread = std::thread::Builder::new()
+                    .name(format!("orbit-task-{}", mid.0))
+                    .spawn(move || {
+                        let msg = futures_lite::future::block_on(task);
+                        let _ = result_tx.send((mid, msg.clone_for_send()));
+                    })
+                    .expect("spawn task thread");
+                pending_threads.push(thread);
+            }
+        }
     }
 }
