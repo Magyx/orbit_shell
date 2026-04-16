@@ -575,8 +575,10 @@ pub fn main() {
     trace::init();
     tracing::info!("orbitd starting");
 
-    let mut orbit = Orbit::new(None).expect("woops");
-    orbit.run();
+    match Orbit::new(None) {
+        Ok(mut orbit) => orbit.run(),
+        Err(e) => tracing::error!("{}", e),
+    }
 
     tracing::info!("orbitd stopped");
 }
