@@ -5,7 +5,7 @@ use orbit_api::{
         event::{KeyEvent, KeyState, LogicalKey},
         graphics::TargetId,
         model::{Color, Size},
-        sctk::{Anchor, KeyboardInteractivity, Layer, LayerOptions, Options, OutputSet},
+        sctk::{LockOptions, Options, OutputSet},
         widget::{Column, Element, Length, Row, Spacer, Text},
     },
 };
@@ -235,15 +235,8 @@ orbit_plugin! {
     manifest = {
         name: "lockscreen",
         commands: [],
-        options: Options::Layer(LayerOptions {
-            layer: Layer::Overlay,
-            size: Size::new(0, 0),
-            anchors: Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT,
-            exclusive_zone: -1,
-            keyboard_interactivity: KeyboardInteractivity::Exclusive,
-            namespace: Some("orbit-lockscreen".to_string()),
-            output: Some(OutputSet::All),
-        }),
+        options: Options::Lock(LockOptions { size: Size::new(0, 0), output: Some(OutputSet::All) }
+        ),
         show_on_startup: false,
     },
 }
