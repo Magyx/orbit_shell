@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use orbit_api::{
-    Engine, Event, OrbitModule, Subscription, Task, orbit_plugin,
+    Engine, Event, OrbitModule, Subscription, Task, orbit_config, orbit_plugin,
     ui::{
         el,
         graphics::TargetId,
@@ -16,8 +16,7 @@ pub enum Msg {
     Tick,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(crate = "orbit_api::serde")]
+#[orbit_config]
 pub struct Config {
     /// Bar height in pixels
     pub height: u32,

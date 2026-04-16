@@ -1,7 +1,6 @@
-use orbit_api::{serde, ui::sctk::Anchor};
+use orbit_api::{orbit_config, ui::sctk::Anchor};
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(crate = "orbit_api::serde")]
+#[orbit_config]
 pub struct Config {
     pub width: u32,
     pub height: u32,

@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
+  "src/orbit-macros",
   "src/orbit-api",
   "src/orbitd",
   "src/orbit-dbus",

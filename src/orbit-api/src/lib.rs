@@ -3,10 +3,8 @@ use std::{fmt, pin::Pin, sync::Arc, time::Duration};
 use serde::{Serialize, de::DeserializeOwned};
 use ui::{sctk::SctkEvent, widget::Element};
 
+pub use orbit_macros::orbit_config;
 pub use tracing;
-
-#[allow(unused_imports)]
-pub use self::macros::*;
 pub use ui;
 pub mod runtime;
 pub use serde;

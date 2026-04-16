@@ -1,5 +1,5 @@
 use orbit_api::{
-    Engine, Event, OrbitModule, Task, orbit_plugin,
+    Engine, Event, OrbitModule, Task, orbit_config, orbit_plugin,
     ui::{
         el,
         event::{KeyEvent, KeyState, LogicalKey},
@@ -51,8 +51,7 @@ fn authenticate(username: &str, password: String) -> bool {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(crate = "orbit_api::serde")]
+#[orbit_config]
 pub struct Config {
     /// Message shown at the top of the lock screen.
     pub message: String,

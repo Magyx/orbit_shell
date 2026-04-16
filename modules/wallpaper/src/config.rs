@@ -1,7 +1,7 @@
 use std::{borrow::Cow, path::PathBuf, time::Duration};
 
 use orbit_api::{
-    serde::{Deserialize, Serialize},
+    orbit_config,
     ui::{
         model::{Family, Size},
         widget::{Element, Length, Overlay, Rectangle, Text},
@@ -10,8 +10,7 @@ use orbit_api::{
 
 use crate::{Msg, PerTarget};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(crate = "orbit_api::serde")]
+#[orbit_config]
 pub struct Config {
     pub source: PathBuf,
     pub cycle: String,
@@ -36,8 +35,8 @@ fn default_time_format() -> String {
     "%H:%M".to_string()
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(crate = "orbit_api::serde", tag = "type", rename_all = "kebab-case")]
+#[orbit_config]
+#[serde(tag = "type")]
 pub enum WidgetConfig {
     Clock {
         x: f32,
@@ -93,8 +92,7 @@ impl WidgetConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(crate = "orbit_api::serde")]
+#[orbit_config]
 pub enum FontFamilyConfig {
     Monospace,
     SansSerif,
