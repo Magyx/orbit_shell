@@ -8,6 +8,6 @@ ui = { workspace = true, features = ["sctk"] }
 
 orbit-macros = { path = "../orbit-macros" }
 serde = { version = "1.0.228", features = ["derive"] }
-serde_yml = "0.0.12"
+serde_yml = { workspace = true }
 
-tracing = "0.1.44"
+tracing = { workspace = true }

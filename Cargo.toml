@@ -15,6 +15,9 @@ members = [
 
 [workspace.dependencies]
 ui = { git = "https://github.com/Magyx/ui_lib.git", rev = "76672b3fce741d6ce6426e068895e39da95382a6" }
+serde_yml = "0.0.12"
+tracing = "0.1.44"
+zbus = "5.14.0"
 
 [profile.release]
 codegen-units = 1
