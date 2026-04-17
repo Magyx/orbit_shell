@@ -138,9 +138,10 @@ macro_rules! orbit_plugin {
         show_on_startup = $show:expr,
         pipelines = $pipelines:expr
     ) => {
-        use $crate::{serde, serde_yml::{self, Value}};
+        #[doc(hidden)]
         use orbit_api::{Subscription as __Sub, Task as __Task, ErasedMsg as __ErasedMsg, Event as __Event, ui::{graphics::{Engine as __Engine, TargetId as __TargetId}, render::pipeline::Pipeline as __Pipeline}};
 
+        #[doc(hidden)]
         struct __Wrapper {
             manifest: $crate::runtime::Manifest,
             pipelines: ::std::vec::Vec<(&'static str, $crate::ui::render::PipelineFactoryFn)>,
@@ -161,27 +162,27 @@ macro_rules! orbit_plugin {
                 self.inner.get_or_init(<$ty as ::std::default::Default>::default)
             }
 
-            fn merged_config_value(raw: &serde_yml::Value) -> serde_yml::Value {
+            fn merged_config_value(raw: &$crate::serde_yml::Value) -> $crate::serde_yml::Value {
 
-                fn merge(base: Value, overlay: &Value) -> Value {
+                fn merge(base: $crate::serde_yml::Value, overlay: &$crate::serde_yml::Value) -> $crate::serde_yml::Value {
                     match (base, overlay) {
-                        (Value::Mapping(mut b), Value::Mapping(o)) => {
+                        ($crate::serde_yml::Value::Mapping(mut b), $crate::serde_yml::Value::Mapping(o)) => {
                             for (k, ov) in o {
                                 match b.remove(k) {
                                     Some(bv) => { b.insert(k.clone(), merge(bv, ov)); }
                                     None => { b.insert(k.clone(), ov.clone()); }
                                 }
                             }
-                            Value::Mapping(b)
+                            $crate::serde_yml::Value::Mapping(b)
                         }
                         // Treat `null` as "leave default"
-                        (b, Value::Null) => b,
+                        (b, $crate::serde_yml::Value::Null) => b,
                         // Scalars/sequences: overlay wins
                         (_, o) => o.clone(),
                     }
                 }
 
-                let defaults = serde_yml::to_value(
+                let defaults = $crate::serde_yml::to_value(
                     <<$ty as $crate::OrbitModule>::Config as ::std::default::Default>::default()
                 ).expect("serialize default config");
 
@@ -261,26 +262,26 @@ macro_rules! orbit_plugin {
                 < $ty as $crate::OrbitModule >::cleanup(self.inner_mut(), engine);
             }
 
-            fn validate_config_raw(&self, cfg: &serde_yml::Value) -> Result<(), String> {
+            fn validate_config_raw(&self, cfg: &$crate::serde_yml::Value) -> Result<(), String> {
                 < $ty as $crate::OrbitModule >::validate_config_raw(cfg)
             }
-            fn validate_config(&self, cfg: &serde_yml::Value) -> Result<(), String> {
+            fn validate_config(&self, cfg: &$crate::serde_yml::Value) -> Result<(), String> {
                 let merged = Self::merged_config_value(cfg);
 
                 let parsed: < $ty as $crate::OrbitModule >::Config =
-                    serde_yml::from_value(merged).map_err(|e| format!("config parse failed: {e}"))?;
+                    $crate::serde_yml::from_value(merged).map_err(|e| format!("config parse failed: {e}"))?;
                 < $ty as $crate::OrbitModule >::validate_config(parsed)
             }
             fn apply_config<'a>(
                 &mut self,
                 engine: &mut __Engine<'a, __ErasedMsg>,
-                config: &serde_yml::Value,
+                config: &$crate::serde_yml::Value,
                 options: &mut $crate::ui::sctk::Options,
             ) -> bool {
                 let merged = Self::merged_config_value(config);
 
                 let parsed: < $ty as $crate::OrbitModule >::Config =
-                    match serde_yml::from_value(merged) {
+                    match $crate::serde_yml::from_value(merged) {
                         Ok(v) => v,
                         Err(e) => {
                             $crate::tracing::warn!(
@@ -326,6 +327,7 @@ macro_rules! orbit_plugin {
             }
         }
 
+        #[doc(hidden)]
         #[unsafe(no_mangle)]
         pub extern "C" fn orbit_module_create() -> *mut dyn $crate::runtime::OrbitModuleDyn {
             let wrapper = __Wrapper {
@@ -342,6 +344,7 @@ macro_rules! orbit_plugin {
             ::std::boxed::Box::into_raw(obj)
         }
 
+        #[doc(hidden)]
         #[unsafe(no_mangle)]
         #[allow(clippy::not_unsafe_ptr_arg_deref)]
         pub extern "C" fn orbit_module_destroy(ptr: *mut dyn $crate::runtime::OrbitModuleDyn) {
