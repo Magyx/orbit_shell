@@ -36,7 +36,7 @@ fn default_time_format() -> String {
 }
 
 #[orbit_config]
-#[serde(tag = "type", rename_all = "kebab-case")]
+#[serde(tag = "type")]
 pub enum WidgetConfig {
     Clock {
         x: f32,
