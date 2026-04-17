@@ -1,10 +1,11 @@
 use std::sync::mpsc;
 
 use orbit_api::ErasedMsg;
+use orbit_common::config::ConfigEvent;
 use orbit_dbus::DbusEvent;
 use ui::sctk::SctkEvent;
 
-use crate::{config::ConfigEvent, module::ModuleId};
+use crate::module::ModuleId;
 
 pub struct RuntimeSender {
     tx: mpsc::Sender<Event>,

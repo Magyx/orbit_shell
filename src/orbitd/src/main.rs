@@ -6,10 +6,11 @@ use smithay_client_toolkit::reexports::calloop_wayland_source::WaylandSource;
 use ui::sctk::{SctkEvent, state::SctkState};
 
 use orbit_api::{Engine, ErasedMsg};
+use orbit_common::{config, watcher::ConfigWatcher};
 use orbit_dbus::DbusEvent;
 
 use crate::{
-    config::{Config, ConfigEvent, ConfigInstruction, ConfigWatcher, compare_configs},
+    config::{Config, ConfigEvent, ConfigInstruction},
     dialog::ErrorDialog,
     event::{FromDispatch, RuntimeSender},
     module::ModuleInfo,
@@ -20,7 +21,7 @@ use crate::{
 use {dbus::OrbitdServer, event::Event, module::ModuleId};
 
 mod api_utils;
-mod config;
+// mod config;
 mod dbus;
 mod dialog;
 mod dispatch;
@@ -56,9 +57,12 @@ impl<'a> Orbit<'a> {
 
         let (dbus_rx, d_server) = OrbitdServer::new();
 
-        let config_path = config_path.unwrap_or_else(config::xdg_config_home);
+        let config_path = config_path.unwrap_or_else(orbit_common::xdg::config_home);
         let mut config = config::load_cfg(&config_path)?;
-        let (config_rx, config_watcher) = ConfigWatcher::new();
+        let (config_tx, config_rx) = loop_channel::channel::<ConfigEvent>();
+        let config_watcher = ConfigWatcher::new(&config_path, move |ev| {
+            let _ = config_tx.send(ev);
+        });
 
         let (sctk_rx, sctk) = SctkApp::new(tx.clone())?;
 
@@ -133,9 +137,6 @@ impl<'a> Orbit<'a> {
 
     // TODO: subscription streams should be running while loaded not only when toggled/shown.
     fn run(&mut self) {
-        self.d_server.start();
-        self.config_watcher.start(&self.config_path);
-
         let mut event_loop: EventLoop<SctkState> = EventLoop::try_new().expect("err");
         let _ = WaylandSource::new(self.sctk.conn.clone(), self.sctk.take_event_queue())
             .insert(event_loop.handle());
@@ -164,6 +165,9 @@ impl<'a> Orbit<'a> {
                 }
             },
         );
+
+        self.d_server.start();
+        self.config_watcher.start();
 
         let dispatch_tx = {
             let tx = self.tx.clone();
@@ -427,14 +431,7 @@ impl<'a> Orbit<'a> {
                             }
 
                             let mut errors = Vec::new();
-                            let instructions = match compare_configs(&self.config, &new_config) {
-                                Ok(i) => i,
-                                Err(e) => {
-                                    runtime_tx
-                                        .send(Event::Config(ConfigEvent::Err(vec![e.into()])));
-                                    continue;
-                                }
-                            };
+                            let instructions = config::compare_configs(&self.config, &new_config);
                             for (
                                 name,
                                 ConfigInstruction {
@@ -575,6 +572,7 @@ pub fn main() {
     trace::init();
     tracing::info!("orbitd starting");
 
+    // FIX: invalid config on startup can crash complete app
     match Orbit::new(None) {
         Ok(mut orbit) => orbit.run(),
         Err(e) => tracing::error!("{}", e),

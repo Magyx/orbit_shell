@@ -3,8 +3,8 @@ use std::{
     ptr::NonNull,
 };
 
-use libloading::{Library, Symbol};
 use orbit_api::{Engine, runtime::OrbitModuleDyn};
+use orbit_common::loader::LibraryHandle;
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub struct ModuleId(pub u32);
@@ -58,7 +58,7 @@ type CreateFn = unsafe fn() -> *mut dyn OrbitModuleDyn;
 type DestroyFn = unsafe fn(*mut dyn OrbitModuleDyn);
 
 pub struct Module {
-    _library: Library,
+    _library: LibraryHandle,
     raw: NonNull<dyn OrbitModuleDyn>,
     destroy: DestroyFn,
 }
@@ -72,23 +72,10 @@ impl Drop for Module {
 impl Module {
     pub fn new(path: &Path) -> Result<Self, String> {
         tracing::debug!(path = %path.display(), "loading");
-        let library = unsafe { Library::new(path) }.map_err(|e| {
-            tracing::error!(path = %path.display(), error = %e, "could not load library");
-            format!("Could not load library {}: {}", path.display(), e)
-        })?;
+        let library = LibraryHandle::open(path)?;
 
-        let create: CreateFn = unsafe {
-            let sym: Symbol<CreateFn> = library
-                .get(b"orbit_module_create\0")
-                .map_err(|e| format!("Could not find orbit_module_create symbol: {}", e))?;
-            *sym
-        };
-        let destroy: DestroyFn = unsafe {
-            let sym: Symbol<DestroyFn> = library
-                .get(b"orbit_module_destroy\0")
-                .map_err(|e| format!("Could not find orbit_module_destroy symbol: {}", e))?;
-            *sym
-        };
+        let create: CreateFn = unsafe { library.get_fn(b"orbit_module_create\0")? };
+        let destroy: DestroyFn = unsafe { library.get_fn(b"orbit_module_destroy\0")? };
 
         let raw = unsafe { create() };
         let raw =

@@ -1,0 +1,12 @@
+[package]
+name = "orbit-common"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+serde_yml = { workspace = true }
+notify = "8.2.0"
+xdg = "3.0.0"
+libloading = { workspace = true }
+tracing = "0.1.44"
+libc = "0.2.185"

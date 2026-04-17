@@ -1,13 +1,9 @@
 use std::thread::JoinHandle;
-use std::{
-    collections::HashMap,
-    fs,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::{collections::HashMap, path::Path, sync::Arc};
 
 use calloop::{LoopHandle, RegistrationToken, channel as loop_channel};
 use orbit_api::{Engine, ErasedMsg};
+use orbit_common::config::Config;
 use ui::{
     graphics::TargetId,
     render::pipeline::PipelineKey,
@@ -18,7 +14,6 @@ use crate::dispatch::StreamHandle;
 use crate::event::RuntimeSender;
 use crate::{
     api_utils::{self, UnraveledTask},
-    config::{self, Config},
     module::{ModuleId, ModuleInfo},
     sctk::{CreatedSurface, SctkApp},
 };
@@ -117,46 +112,21 @@ impl ModuleManager {
         engine: &mut Engine<'_>,
         prev_module_len: Option<usize>,
     ) -> Result<HashMap<ModuleId, ModuleInfo>, String> {
-        match Self::discover_modules(config_path, prev_module_len) {
+        match Self::discover_modules(cfg, config_path, prev_module_len) {
             Ok(modules) => Self::load_modules(modules, cfg, engine),
             Err(e) => Err(e),
         }
     }
 
     fn discover_modules(
+        config: &Config,
         config_path: &Path,
         prev_module_len: Option<usize>,
     ) -> Result<Vec<ModuleInfo>, String> {
-        const SYSTEM_MODULES: &str = "/usr/lib/orbit/modules";
-
-        let user_dir_opt = config::modules_dir_if_exists(config_path);
-        let mut by_name: HashMap<String, PathBuf> = HashMap::new();
-
-        let push_dir = |map: &mut HashMap<String, PathBuf>, dir: &Path| -> Result<(), String> {
-            if let Ok(entries) = fs::read_dir(dir) {
-                for entry in entries {
-                    let path = entry.map_err(|e| e.to_string())?.path();
-                    if path.extension().map(|e| e == "so").unwrap_or(false)
-                        && let Some(name) = path.file_name().and_then(|n| n.to_str())
-                    {
-                        map.insert(name.split('.').next().unwrap().to_string(), path);
-                    }
-                }
-            }
-            Ok(())
-        };
-
-        let _ = push_dir(&mut by_name, Path::new(SYSTEM_MODULES));
-        if let Some(user_dir) = user_dir_opt.as_deref() {
-            let _ = push_dir(&mut by_name, user_dir);
-        }
-
-        let mut items: Vec<(String, PathBuf)> = by_name.into_iter().collect();
-        items.sort_by(|(a, _), (b, _)| a.cmp(b));
-
-        let mut modules = Vec::with_capacity(prev_module_len.unwrap_or_default());
-        for (name, path) in items {
-            modules.push(ModuleInfo::new(name, path));
+        let discovered = orbit_common::discovery::discover_modules(config_path, config);
+        let mut modules = Vec::with_capacity(prev_module_len.unwrap_or(discovered.len()));
+        for d in discovered {
+            modules.push(ModuleInfo::new(d.name, d.path));
         }
         Ok(modules)
     }
