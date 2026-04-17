@@ -8,6 +8,7 @@ members = [
   "src/orbit-dbus",
   "tools/xtask",
   "tools/orbit-cli",
+  "tools/orbit-schema",
   "modules/wallpaper",
   "modules/bar",
   "modules/launcher",
@@ -17,11 +18,12 @@ members = [
 [workspace.dependencies]
 ui = { git = "https://github.com/Magyx/ui_lib.git", rev = "76672b3fce741d6ce6426e068895e39da95382a6" }
 serde_yml = "0.0.12"
+serde_json = "1.0.149"
 tracing = "0.1.44"
 libloading = "0.8.9"
 zbus = "5.14.0"
 
-[profile.release]
-codegen-units = 1
-lto = true
-strip = "symbols"
+# [profile.release]
+# codegen-units = 1
+# lto = true
+# strip = "symbols"

@@ -9,7 +9,11 @@ pub use ui;
 #[doc(hidden)]
 pub mod runtime;
 #[doc(hidden)]
+pub use schemars;
+#[doc(hidden)]
 pub use serde;
+#[doc(hidden)]
+pub use serde_json;
 #[doc(hidden)]
 pub use serde_yml;
 

@@ -352,5 +352,17 @@ macro_rules! orbit_plugin {
                 unsafe { drop(::std::boxed::Box::<dyn $crate::runtime::OrbitModuleDyn>::from_raw(ptr)) }
             }
         }
+
+        #[doc(hidden)]
+        #[unsafe(no_mangle)]
+        pub extern "C" fn orbit_schema() -> *const std::ffi::c_char {
+            use $crate::schemars;
+            static SCHEMA: std::sync::OnceLock<std::ffi::CString> = std::sync::OnceLock::new();
+            SCHEMA.get_or_init(|| {
+                let root = schemars::schema_for!(<$ty as $crate::OrbitModule>::Config);
+                let json = $crate::serde_json::to_string(&root).expect("schema serialization");
+                std::ffi::CString::new(json).expect("schema contains null byte")
+            }).as_ptr()
+        }
     };
 }

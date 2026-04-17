@@ -10,6 +10,8 @@ pub fn orbit_config(_attr: TokenStream, item: TokenStream) -> TokenStream {
         #[derive(Debug, Clone)]
         #[derive(orbit_api::serde::Serialize, orbit_api::serde::Deserialize, )]
         #[serde(crate = "orbit_api::serde", rename_all = "snake_case")]
+        #[derive(orbit_api::schemars::JsonSchema)]
+        #[schemars(crate = "orbit_api::schemars")]
         #input
     };
 
