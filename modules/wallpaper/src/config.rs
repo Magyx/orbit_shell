@@ -10,19 +10,31 @@ use orbit_api::{
 
 use crate::{Msg, PerTarget};
 
+fn default_source() -> PathBuf {
+    xdg_user::pictures()
+        .unwrap_or_default()
+        .unwrap_or_default()
+        .join("Wallpapers")
+}
+fn default_cycle() -> String {
+    "1h".into()
+}
+
 #[orbit_config]
 pub struct Config {
+    #[serde(default = "default_source")]
     pub source: PathBuf,
+    #[serde(default = "default_cycle")]
     pub cycle: String,
+    #[serde(default)]
     pub widgets: Vec<WidgetConfig>,
 }
 
 impl Default for Config {
     fn default() -> Self {
-        let home = xdg_user::pictures().unwrap_or_default().unwrap_or_default();
         Self {
-            source: home.join("Wallpapers"),
-            cycle: "1h".into(),
+            source: default_source(),
+            cycle: default_cycle(),
             widgets: Vec::new(),
         }
     }
@@ -43,6 +55,7 @@ pub enum WidgetConfig {
         y: f32,
         #[serde(default = "default_clock_font_size")]
         font_size: f32,
+        #[serde(default)]
         font_family: Option<FontFamilyConfig>,
         #[serde(default = "default_time_format")]
         time_format: String,

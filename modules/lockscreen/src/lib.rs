@@ -11,6 +11,24 @@ use orbit_api::{
 };
 use pam::Client;
 
+fn default_message() -> String {
+    "Welcome {username}!".into()
+}
+
+#[orbit_config]
+pub struct Config {
+    #[serde(default = "default_message")]
+    pub message: String,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            message: default_message(),
+        }
+    }
+}
+
 fn current_username() -> String {
     if let Ok(u) = std::env::var("USER")
         && !u.is_empty()
@@ -47,20 +65,6 @@ fn authenticate(username: &str, password: String) -> bool {
         Err(e) => {
             println!("lockscreen: PAM authentication failed: {e}");
             false
-        }
-    }
-}
-
-#[orbit_config]
-pub struct Config {
-    /// Message shown at the top of the lock screen.
-    pub message: String,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            message: "Welcome {username}!".into(),
         }
     }
 }

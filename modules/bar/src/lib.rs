@@ -11,26 +11,33 @@ use orbit_api::{
     },
 };
 
-#[derive(Clone, Debug)]
-pub enum Msg {
-    Tick,
+fn default_bar_height() -> u32 {
+    32
+}
+fn default_time_format() -> String {
+    "%H:%M:%S".into()
 }
 
 #[orbit_config]
 pub struct Config {
-    /// Bar height in pixels
+    #[serde(default = "default_bar_height")]
     pub height: u32,
-    /// strftime-style format (chrono)
+    #[serde(default = "default_time_format")]
     pub time_format: String,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
-            height: 32,
-            time_format: "%H:%M:%S".into(),
+            height: default_bar_height(),
+            time_format: default_time_format(),
         }
     }
+}
+
+#[derive(Clone, Debug)]
+pub enum Msg {
+    Tick,
 }
 
 #[derive(Debug)]
