@@ -52,12 +52,11 @@ struct Orbit<'a> {
 }
 
 impl<'a> Orbit<'a> {
-    fn new(config_path: Option<PathBuf>) -> Result<Self, String> {
+    fn new(config_path: PathBuf) -> Result<Self, String> {
         let (tx, rx) = mpsc::channel::<Event>();
 
         let (dbus_rx, d_server) = OrbitdServer::new();
 
-        let config_path = config_path.unwrap_or_else(orbit_common::xdg::config_home);
         let mut config = config::load_cfg(&config_path)?;
         let (config_tx, config_rx) = loop_channel::channel::<ConfigEvent>();
         let config_watcher = ConfigWatcher::new(&config_path, move |ev| {
@@ -569,11 +568,12 @@ impl<'a> Orbit<'a> {
 pub fn main() {
     // TODO: get config_path from args
 
-    trace::init();
+    let config_path = orbit_common::xdg::config_home();
+    trace::init(&config_path);
     tracing::info!("orbitd starting");
 
     // FIX: invalid config on startup can crash complete app
-    match Orbit::new(None) {
+    match Orbit::new(config_path) {
         Ok(mut orbit) => orbit.run(),
         Err(e) => tracing::error!("{}", e),
     }
