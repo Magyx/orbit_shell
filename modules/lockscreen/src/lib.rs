@@ -82,12 +82,23 @@ enum AuthState {
     Failed,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct LockScreen {
     cfg: Config,
     username: String,
     password: String,
     state: AuthState,
+}
+
+impl Default for LockScreen {
+    fn default() -> Self {
+        Self {
+            cfg: Default::default(),
+            username: current_username(),
+            password: Default::default(),
+            state: Default::default(),
+        }
+    }
 }
 
 impl OrbitModule for LockScreen {
@@ -116,12 +127,6 @@ impl OrbitModule for LockScreen {
         event: &Event<Self::Message>,
     ) -> Task<Msg> {
         match event {
-            // Resolve username lazily on first draw so it is always fresh.
-            Event::RedrawRequested if self.username.is_empty() => {
-                self.username = current_username();
-                Task::RedrawTarget
-            }
-
             Event::Key(KeyEvent {
                 state: KeyState::Pressed,
                 logical_key: key,
@@ -132,21 +137,11 @@ impl OrbitModule for LockScreen {
                     return Task::None;
                 }
 
-                match key {
+                let mut is_enter = false;
+                let task = match key {
                     LogicalKey::Enter => {
-                        if self.password.is_empty() {
-                            return Task::None;
-                        }
-                        self.state = AuthState::Checking;
-                        let username = self.username.clone();
-                        let password = std::mem::take(&mut self.password);
-                        Task::batch([
-                            Task::RedrawTarget,
-                            Task::spawn(async move {
-                                let ok = authenticate(&username, password);
-                                Msg::AuthResult(ok)
-                            }),
-                        ])
+                        is_enter = true;
+                        Task::None
                     }
 
                     LogicalKey::Backspace => {
@@ -162,9 +157,14 @@ impl OrbitModule for LockScreen {
                     }
 
                     LogicalKey::Character(c) => {
-                        self.password.push_str(c);
-                        self.state = AuthState::Idle;
-                        Task::RedrawTarget
+                        if c == "\r" {
+                            is_enter = true;
+                            Task::None
+                        } else {
+                            self.password.push_str(c);
+                            self.state = AuthState::Idle;
+                            Task::RedrawTarget
+                        }
                     }
 
                     LogicalKey::Space => {
@@ -174,6 +174,24 @@ impl OrbitModule for LockScreen {
                     }
 
                     _ => Task::None,
+                };
+
+                if is_enter {
+                    if self.password.is_empty() {
+                        return Task::None;
+                    }
+                    self.state = AuthState::Checking;
+                    let username = self.username.clone();
+                    let password = std::mem::take(&mut self.password);
+                    Task::batch([
+                        Task::RedrawTarget,
+                        Task::spawn(async move {
+                            let ok = authenticate(&username, password);
+                            Msg::AuthResult(ok)
+                        }),
+                    ])
+                } else {
+                    task
                 }
             }
 

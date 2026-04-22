@@ -132,9 +132,6 @@ impl Wallpaper {
             globals.window_size[0].ceil() as u32,
             globals.window_size[1].ceil() as u32,
         );
-        if w == 0 || h == 0 {
-            return false;
-        }
         let Some(tex) = Self::load_texture(&path, w, h, engine) else {
             return false;
         };

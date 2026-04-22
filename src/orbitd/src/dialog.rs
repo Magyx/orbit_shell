@@ -4,13 +4,13 @@ use ui::{
     graphics::TargetId,
     model::{Color, Size, Vec4},
     sctk::{
-        Anchor, KeyboardInteractivity, Layer, LayerOptions, Options, OutputSet, SctkEvent,
-        SurfaceId,
+        Anchor, KeyboardInteractivity, Layer, LayerOptions, Options, OutputSet, RawWaylandHandles,
+        SctkEvent, SurfaceId,
     },
     widget::{Column, Element, Length, Scrollable, Text},
 };
 
-use crate::sctk::{CreatedSurface, SctkApp};
+use crate::sctk::SctkApp;
 
 pub fn error_view(_: &TargetId, errors: &Vec<String>) -> Element<ErasedMsg> {
     let mut col = Column::new::<Vec<_>, Element<ErasedMsg>>(el!())
@@ -32,6 +32,8 @@ pub fn error_view(_: &TargetId, errors: &Vec<String>) -> Element<ErasedMsg> {
 pub struct ErrorDialog {
     targets: Vec<(TargetId, SurfaceId)>,
     errors: Vec<String>,
+
+    pending_sids: Vec<SurfaceId>,
 }
 
 impl ErrorDialog {
@@ -39,13 +41,14 @@ impl ErrorDialog {
         Self {
             targets: Vec::new(),
             errors: Vec::new(),
+            pending_sids: Vec::new(),
         }
     }
 
     pub fn is_shown(&self) -> bool {
         !self.targets.is_empty()
     }
-    pub fn show(&mut self, engine: &mut Engine<'_>, sctk: &mut SctkApp, errors: Vec<String>) {
+    pub fn show(&mut self, sctk: &mut SctkApp, errors: Vec<String>) {
         if self.targets.is_empty() {
             let opts = Options::Layer(LayerOptions {
                 layer: Layer::Top,
@@ -57,21 +60,43 @@ impl ErrorDialog {
                 output: Some(OutputSet::All),
             });
 
-            let made = sctk.create_surfaces(opts);
-            for CreatedSurface { sid, handles, size } in made {
-                let tid = engine.attach_target(std::sync::Arc::new(handles), size);
-                self.targets.push((tid, sid));
+            let sids = sctk.create_surfaces(opts);
+            for sid in sids {
+                self.pending_sids.push(sid);
             }
         }
 
         self.errors = errors;
     }
+    pub fn try_attach_pending(
+        &mut self,
+        engine: &mut Engine<'_>,
+        sctk: &mut SctkApp,
+        sid: SurfaceId,
+    ) {
+        let Some(index) = self.pending_sids.iter().position(|i| i == &sid) else {
+            return;
+        };
+        self.pending_sids.remove(index);
+        let Some(rec) = sctk.state.surfaces.get(&sid) else {
+            return;
+        };
+        let handles = RawWaylandHandles::new(&sctk.conn, &rec.wl_surface);
+        let tid = engine.attach_target(std::sync::Arc::new(handles), rec.size);
+        self.targets.push((tid, sid));
+    }
     pub fn hide(&mut self, engine: &mut Engine<'_>, sctk: &mut SctkApp) {
-        for (tid, sid) in self.targets.drain(..) {
+        let mut sids: Vec<SurfaceId> = self.targets.iter().map(|(_, sid)| *sid).collect();
+        sids.append(&mut self.pending_sids);
+
+        for (tid, _) in self.targets.drain(..) {
             engine.detach_target(&tid);
-            sctk.destroy_surfaces(&[sid]);
         }
+        sctk.destroy_surfaces(&sids);
         self.errors.clear();
+    }
+    pub fn remove_sid(&mut self, sid: SurfaceId) {
+        self.pending_sids.retain(|s| *s != sid);
     }
 
     pub fn handle_platform_event(&mut self, engine: &mut Engine<'_>, event: &SctkEvent) {

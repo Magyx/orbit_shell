@@ -1,5 +1,5 @@
 use std::thread::JoinHandle;
-use std::{collections::HashMap, path::Path, sync::Arc};
+use std::{collections::HashMap, path::Path};
 
 use calloop::{LoopHandle, RegistrationToken, channel as loop_channel};
 use orbit_api::{Engine, ErasedMsg};
@@ -15,7 +15,7 @@ use crate::event::RuntimeSender;
 use crate::{
     api_utils::{self, UnraveledTask},
     module::{ModuleId, ModuleInfo},
-    sctk::{CreatedSurface, SctkApp},
+    sctk::SctkApp,
 };
 
 pub struct ModuleManager {
@@ -27,6 +27,7 @@ pub struct ModuleManager {
     by_target: HashMap<TargetId, (SurfaceId, ModuleId)>,
 
     pending_threads: Vec<JoinHandle<()>>,
+    pending_surfaces: HashMap<SurfaceId, ModuleId>,
 }
 
 impl ModuleManager {
@@ -46,11 +47,20 @@ impl ModuleManager {
             by_surface: HashMap::with_capacity(modules_len),
             by_target: HashMap::with_capacity(modules_len),
             pending_threads: Vec::new(),
+            pending_surfaces: HashMap::new(),
         })
     }
 
     pub fn len(&self) -> usize {
         self.modules.len()
+    }
+
+    pub fn add_pending(&mut self, sid: SurfaceId, mid: ModuleId) {
+        self.pending_surfaces.insert(sid, mid);
+    }
+
+    pub fn take_pending(&mut self, sid: SurfaceId) -> Option<ModuleId> {
+        self.pending_surfaces.remove(&sid)
     }
 
     pub fn module_ids_sorted(&self) -> Vec<ModuleId> {
@@ -86,6 +96,8 @@ impl ModuleManager {
     }
 
     pub fn remove_sid(&mut self, engine: &mut Engine<'_>, sctk: &mut SctkApp, sid: SurfaceId) {
+        self.pending_surfaces.remove(&sid);
+
         if let Some((tid, _)) = self.by_surface.remove(&sid) {
             engine.detach_target(&tid);
             sctk.state.remove_surface_by_surface_id(sid);
@@ -187,10 +199,9 @@ impl ModuleManager {
             engine.register_pipeline(PipelineKey::Other(key), factory);
         }
 
-        let items = sctk.create_surfaces(opts_final);
-        for CreatedSurface { sid, handles, size } in items {
-            let tid = engine.attach_target(Arc::new(handles), size);
-            self.add_id(*mid, (sid, tid));
+        let sids = sctk.create_surfaces(opts_final);
+        for sid in sids {
+            self.add_pending(sid, *mid);
         }
 
         self.add_subscriptions(tx, loop_handle, mid);
@@ -220,7 +231,12 @@ impl ModuleManager {
             }
         }
 
-        let all_sids: Vec<_> = self.by_surface.keys().copied().collect();
+        let all_sids: Vec<_> = self
+            .by_surface
+            .keys()
+            .copied()
+            .chain(self.pending_surfaces.keys().copied())
+            .collect();
         self.by_surface.clear();
         sctk.destroy_surfaces(&all_sids);
         for (_mid, tids) in self.by_module.drain() {
@@ -361,18 +377,24 @@ impl ModuleManager {
             module.toggled = false;
         };
 
-        let sids: Vec<SurfaceId> = self
+        let mut sids: Vec<SurfaceId> = self
             .by_surface
             .iter()
             .filter_map(|(sid, (_, owner))| if owner == mid { Some(*sid) } else { None })
             .collect();
-        let tids = self.by_module.remove(mid).unwrap_or_default();
+        sids.extend(
+            self.pending_surfaces
+                .iter()
+                .filter_map(|(sid, owner)| (owner == mid).then_some(sid)),
+        );
 
+        let tids = self.by_module.remove(mid).unwrap_or_default();
         for tid in tids {
             engine.detach_target(&tid);
         }
         self.by_surface.retain(|_, (_, owner)| owner != mid);
         self.by_target.retain(|_, (_, owner)| owner != mid);
+        self.pending_surfaces.retain(|_, owner| owner != mid);
 
         self.remove_subscriptions(loop_handle, mid);
         self.remove_streams(loop_handle, mid);

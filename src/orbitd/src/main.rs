@@ -1,9 +1,13 @@
 // TODO: better error messages cmon dude
-use std::{fmt::Write, path::PathBuf, sync::mpsc};
+use std::{
+    fmt::Write,
+    path::PathBuf,
+    sync::{Arc, mpsc},
+};
 
 use calloop::{EventLoop, channel as loop_channel};
 use smithay_client_toolkit::reexports::calloop_wayland_source::WaylandSource;
-use ui::sctk::{SctkEvent, state::SctkState};
+use ui::sctk::{RawWaylandHandles, SctkEvent, state::SctkState};
 
 use orbit_api::{Engine, ErasedMsg};
 use orbit_common::{config, watcher::ConfigWatcher};
@@ -21,7 +25,6 @@ use crate::{
 use {dbus::OrbitdServer, event::Event, module::ModuleId};
 
 mod api_utils;
-// mod config;
 mod dbus;
 mod dialog;
 mod dispatch;
@@ -134,6 +137,7 @@ impl<'a> Orbit<'a> {
         reply
     }
 
+    // TODO: output resizing is slow, not yet known of this also counts for xdg_windows.
     // TODO: subscription streams should be running while loaded not only when toggled/shown.
     fn run(&mut self) {
         let mut event_loop: EventLoop<SctkState> = EventLoop::try_new().expect("err");
@@ -204,15 +208,33 @@ impl<'a> Orbit<'a> {
                         match ui_event {
                             event::Ui::Orbit(msg) => match msg {
                                 event::SctkMessage::SurfaceConfigured(id) => {
-                                    let Some(sid) = self.sctk.state.surface_id_by_protocol_id(id)
+                                    let Some(sid) =
+                                        self.sctk.state.surface_id_by_protocol_id(id).copied()
                                     else {
                                         continue;
                                     };
 
-                                    if let Some(&(_, mid)) = self.module_manager.by_surface(sid) {
+                                    if let Some(mid) = self.module_manager.take_pending(sid) {
+                                        let Some(rec) = self.sctk.state.surfaces.get(&sid) else {
+                                            continue;
+                                        };
+                                        let handles = RawWaylandHandles::new(
+                                            &self.sctk.conn,
+                                            &rec.wl_surface,
+                                        );
+                                        let tid =
+                                            self.engine.attach_target(Arc::new(handles), rec.size);
+                                        self.module_manager.add_id(mid, (sid, tid));
                                         runtime_tx.send(Event::Ui(event::Ui::ForceRedraw(mid)));
+                                    } else {
+                                        self.error_dialog.try_attach_pending(
+                                            &mut self.engine,
+                                            &mut self.sctk,
+                                            sid,
+                                        );
                                     }
                                 }
+
                                 event::SctkMessage::SurfaceDestroyed(id) => {
                                     let Some(&sid) = self.sctk.state.surface_id_by_protocol_id(id)
                                     else {
@@ -225,6 +247,7 @@ impl<'a> Orbit<'a> {
                                         &mut self.sctk,
                                         sid,
                                     );
+                                    self.error_dialog.remove_sid(sid);
                                 }
                                 event::SctkMessage::OutputCreated => {
                                     for mid in self.module_manager.module_ids_sorted() {
@@ -235,13 +258,12 @@ impl<'a> Orbit<'a> {
                                             continue;
                                         }
 
-                                        let new_surfaces = self
+                                        let sids = self
                                             .sctk
                                             .ensure_surfaces(&module.as_ref().manifest().options);
 
-                                        for (sid, target, size) in new_surfaces {
-                                            let tid = self.engine.attach_target(target, size);
-                                            self.module_manager.add_id(mid, (sid, tid));
+                                        for sid in sids {
+                                            self.module_manager.add_pending(sid, mid);
                                         }
                                     }
                                 }
@@ -367,6 +389,7 @@ impl<'a> Orbit<'a> {
                         DbusEvent::Commands(module_name, resp_tx) => {
                             _ = resp_tx.send(self.format_commands(&module_name));
                         }
+                        // FIX: when module is lock don't even try to untoggle.
                         DbusEvent::Toggle(module_name) => {
                             let Some((mid, module)) = self
                                 .module_manager
@@ -539,8 +562,7 @@ impl<'a> Orbit<'a> {
                         }
                         ConfigEvent::Err(errors) => {
                             tracing::warn!(?errors, "config errors");
-                            self.error_dialog
-                                .show(&mut self.engine, &mut self.sctk, errors);
+                            self.error_dialog.show(&mut self.sctk, errors);
                         }
                     },
                 }

@@ -1,4 +1,4 @@
-use std::sync::{Arc, mpsc};
+use std::sync::mpsc;
 
 use smithay_client_toolkit::{
     compositor::CompositorState,
@@ -9,10 +9,7 @@ use smithay_client_toolkit::{
     session_lock::SessionLockState,
     shell::{WaylandSurface, wlr_layer::LayerShell, xdg::XdgShell},
 };
-use ui::{
-    model::Size,
-    sctk::{Options, RawWaylandHandles, SctkEvent, SurfaceId, erased, handler, state::SctkState},
-};
+use ui::sctk::{Options, SctkEvent, SurfaceId, erased, handler, state::SctkState};
 use wayland_client::{Connection, EventQueue, Proxy, QueueHandle, globals::registry_queue_init};
 
 use crate::event::SctkMessage;
@@ -101,13 +98,6 @@ impl handler::SctkHandler<SctkMessage> for OrbitHandler {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct CreatedSurface {
-    pub sid: SurfaceId,
-    pub handles: RawWaylandHandles,
-    pub size: Size<u32>,
-}
-
 pub struct SctkApp {
     pub conn: Connection,
     pub event_queue: Option<EventQueue<SctkState>>,
@@ -163,53 +153,40 @@ impl SctkApp {
         self.event_queue.take().expect("event_queue already taken")
     }
 
-    pub fn create_surfaces(&mut self, opts: Options) -> Vec<CreatedSurface> {
-        let mut items = Vec::new();
+    pub fn create_surfaces(&mut self, opts: Options) -> Vec<SurfaceId> {
         match opts {
-            Options::Layer(layer_opts) => {
-                for (sid, size) in self.state.spawn_layer_surfaces(&self.qh, layer_opts) {
-                    let handles =
-                        RawWaylandHandles::new(&self.conn, &self.state.surfaces[&sid].wl_surface);
-                    items.push(CreatedSurface { sid, handles, size });
-                }
-            }
+            Options::Layer(layer_opts) => self.state.spawn_layer_surfaces(&self.qh, layer_opts),
             Options::Xdg(xdg_opts) => {
-                let (sid, size) = self.state.spawn_window(&self.qh, xdg_opts);
-                let handles =
-                    RawWaylandHandles::new(&self.conn, &self.state.surfaces[&sid].wl_surface);
-                items.push(CreatedSurface { sid, handles, size });
+                vec![self.state.spawn_window(&self.qh, xdg_opts)]
             }
-            ui::sctk::Options::Lock(lock_opts) => _ = self.state.lock_session(&self.qh, lock_opts),
+            Options::Lock(lock_opts) => self
+                .state
+                .lock_session(&self.qh, lock_opts)
+                .unwrap_or_default(),
         }
-        items
     }
 
-    pub fn ensure_surfaces(
-        &mut self,
-        opts: &Options,
-    ) -> Vec<(SurfaceId, Arc<RawWaylandHandles>, Size<u32>)> {
-        let new_surfaces = match opts {
-            Options::Layer(layer_options) => {
-                self.state.ensure_layer_surfaces(&self.qh, layer_options)
-            }
+    pub fn ensure_surfaces(&mut self, opts: &Options) -> Vec<SurfaceId> {
+        match opts {
+            Options::Layer(layer_options) => self
+                .state
+                .ensure_layer_surfaces(&self.qh, layer_options)
+                .iter()
+                .map(|(s, _)| s)
+                .copied()
+                .collect(),
             Options::Lock(lock_options) => self
                 .state
                 .ensure_lock_surfaces(&self.qh, lock_options)
-                .unwrap_or_default(),
+                .unwrap_or_default()
+                .iter()
+                .map(|(s, _)| s)
+                .copied()
+                .collect(),
             _ => {
-                return vec![];
+                vec![]
             }
-        };
-
-        let mut out: Vec<(SurfaceId, Arc<RawWaylandHandles>, Size<u32>)> = Vec::new();
-        for (sid, size) in new_surfaces {
-            let target = Arc::new(RawWaylandHandles::new(
-                &self.conn,
-                &self.state.surfaces[&sid].wl_surface,
-            ));
-            out.push((sid, target, size));
         }
-        out
     }
 
     pub fn destroy_surfaces(&mut self, sids: &[SurfaceId]) {
