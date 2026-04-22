@@ -343,6 +343,14 @@ impl<'a> Orbit<'a> {
                                     true,
                                 );
                             }
+                            event::Ui::ExitModule(mid) => {
+                                self.module_manager.unrealize_module(
+                                    &mut self.engine,
+                                    &mut self.sctk,
+                                    &mut event_loop.handle(),
+                                    &mid,
+                                );
+                            }
                         }
                     }
                     Event::Dbus(dbus_event) => match dbus_event {
@@ -389,7 +397,6 @@ impl<'a> Orbit<'a> {
                         DbusEvent::Commands(module_name, resp_tx) => {
                             _ = resp_tx.send(self.format_commands(&module_name));
                         }
-                        // FIX: when module is lock don't even try to untoggle.
                         DbusEvent::Toggle(module_name) => {
                             let Some((mid, module)) = self
                                 .module_manager
@@ -399,7 +406,16 @@ impl<'a> Orbit<'a> {
                                 continue;
                             };
 
+                            let is_lock = matches!(
+                                module.as_ref().manifest().options,
+                                ui::sctk::Options::Lock(_)
+                            );
+
                             if module.toggled {
+                                if is_lock {
+                                    tracing::warn!(module = %module_name, "cannot untoggle a lock module");
+                                    continue;
+                                }
                                 self.module_manager.unrealize_module(
                                     &mut self.engine,
                                     &mut self.sctk,
@@ -407,6 +423,11 @@ impl<'a> Orbit<'a> {
                                     &mid,
                                 );
                             } else {
+                                if is_lock && self.sctk.state.has_active_lock() {
+                                    tracing::warn!(module = %module_name, "a lock is already active");
+                                    continue;
+                                }
+
                                 self.module_manager.realize_module(
                                     &mut self.engine,
                                     &mut self.sctk,

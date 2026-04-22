@@ -374,8 +374,15 @@ impl ModuleManager {
         mid: &ModuleId,
     ) {
         if let Some(module) = self.modules.get_mut(mid) {
+            if matches!(
+                module.as_ref().manifest().options,
+                ui::sctk::Options::Lock(_)
+            ) {
+                sctk.state.unlock_session();
+            }
+
             module.toggled = false;
-        };
+        }
 
         let mut sids: Vec<SurfaceId> = self
             .by_surface
@@ -431,7 +438,7 @@ impl ModuleManager {
                 &mut (module, task),
                 tid,
             );
-            super::dispatch::handle_task(task, mid, module, tx, task_tx, pending_threads);
+            super::dispatch::handle_task(task, mid, tx, task_tx, pending_threads);
         }
 
         let mut task = None;
@@ -526,14 +533,7 @@ impl ModuleManager {
                 &|tid, s: &ModuleInfo| s.as_ref().view(tid),
                 module,
             );
-            super::dispatch::handle_task(
-                &mut task,
-                mid,
-                module,
-                tx,
-                task_tx,
-                &mut self.pending_threads,
-            );
+            super::dispatch::handle_task(&mut task, mid, tx, task_tx, &mut self.pending_threads);
         }
     }
 

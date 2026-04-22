@@ -60,4 +60,5 @@ pub enum Ui {
     Module(ModuleId, SctkEvent),
     Result(FromDispatch, ModuleId, ErasedMsg),
     ForceRedraw(ModuleId),
+    ExitModule(ModuleId),
 }

@@ -14,7 +14,7 @@ use ui::sctk::state::SctkState;
 use crate::{
     api_utils::{self, UnraveledTask},
     event::{self, RuntimeSender},
-    module::{ModuleId, ModuleInfo},
+    module::ModuleId,
 };
 
 pub struct StreamHandle {
@@ -162,7 +162,6 @@ pub fn handle_streams(
 pub fn handle_task(
     utask: &mut Option<UnraveledTask>,
     mid: &ModuleId,
-    module: &ModuleInfo,
     tx: &RuntimeSender,
     dispatch_tx: &loop_channel::Sender<(ModuleId, ErasedMsg)>,
     pending_threads: &mut Vec<JoinHandle<()>>,
@@ -174,9 +173,7 @@ pub fn handle_task(
                 return;
             }
             api_utils::Action::ExitModule => {
-                tx.send(event::Event::Dbus(orbit_dbus::DbusEvent::Toggle(
-                    module.name.clone(),
-                )));
+                tx.send(event::Event::Ui(event::Ui::ExitModule(*mid)));
                 return;
             }
             api_utils::Action::RedrawModule => {
