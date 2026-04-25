@@ -246,7 +246,7 @@ impl OrbitModule for LockScreen {
             Spacer::new(Size::splat(Length::Grow)),
             Spacer::new(Size::splat(Length::Grow)),
         ])
-        .color(Color::rgba(0, 0, 0, 240))
+        .color(Color::BLACK)
         .size(Size::splat(Length::Grow))
         .into()
     }
