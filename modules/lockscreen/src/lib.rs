@@ -122,7 +122,7 @@ impl OrbitModule for LockScreen {
 
     fn update<'a>(
         &mut self,
-        _tid: TargetId,
+        _tid: Option<TargetId>,
         _engine: &mut Engine<'a>,
         event: &Event<Self::Message>,
     ) -> Task<Msg> {

@@ -311,18 +311,16 @@ impl<'a> Orbit<'a> {
                                 );
                             }
                             event::Ui::Result(from, mid, msg) => {
-                                let (loaded, shown) = if let Some(module) =
-                                    self.module_manager.module(mid)
-                                    && module.is_loaded()
-                                {
-                                    (true, module.toggled)
+                                let loaded = if let Some(module) = self.module_manager.module(mid) {
+                                    module.is_loaded()
                                 } else {
-                                    (false, false)
+                                    false
                                 };
 
                                 match from {
-                                    FromDispatch::Subscription if !loaded => continue,
-                                    FromDispatch::Task if !shown => continue,
+                                    FromDispatch::Subscription | FromDispatch::Task if !loaded => {
+                                        continue;
+                                    }
                                     _ => (),
                                 }
                                 self.module_manager.handle_platform_event(

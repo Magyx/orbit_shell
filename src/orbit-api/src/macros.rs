@@ -299,7 +299,7 @@ macro_rules! orbit_plugin {
             }
             fn update<'a>(
                 &mut self,
-                tid: __TargetId,
+                tid: Option<__TargetId>,
                 engine: &mut __Engine<'a, __ErasedMsg>,
                 event: &__Event<__ErasedMsg>,
             ) -> __Task<__ErasedMsg> {

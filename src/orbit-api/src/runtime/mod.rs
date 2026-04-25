@@ -31,7 +31,7 @@ pub trait OrbitModuleDyn: 'static {
     fn pipelines(&self) -> Vec<(&'static str, PipelineFactoryFn)>;
     fn update<'a>(
         &mut self,
-        tid: TargetId,
+        tid: Option<TargetId>,
         engine: &mut Engine<'a, ErasedMsg>,
         event: &Event<ErasedMsg>,
     ) -> Task<ErasedMsg>;

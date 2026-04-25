@@ -12,6 +12,7 @@ use ui::{
 
 use crate::dispatch::StreamHandle;
 use crate::event::RuntimeSender;
+use crate::sctk;
 use crate::{
     api_utils::{self, UnraveledTask},
     module::{ModuleId, ModuleInfo},
@@ -213,7 +214,10 @@ impl ModuleManager {
         (module, task): &mut (&mut ModuleInfo, &mut Option<UnraveledTask>),
         tid: &TargetId,
     ) -> bool {
-        let (ut, redraw) = api_utils::unravel_task(module.as_mut().update(*tid, engine, event));
+        let (ut, redraw) = api_utils::unravel_task(
+            module.toggled,
+            module.as_mut().update(Some(*tid), engine, event),
+        );
         **task = Some(ut);
         redraw
     }
@@ -458,23 +462,37 @@ impl ModuleManager {
                     &mut task,
                 );
             } else {
-                let Some(targets) = self.by_module.get(&mid) else {
-                    // TODO: this shouldn't happen so maybe emit a warning or something?
-                    return;
+                if let Some(targets) = self.by_module.get(&mid) {
+                    for tid in targets {
+                        handle_platform_event_internal(
+                            engine,
+                            tx,
+                            dispath_tx,
+                            event,
+                            &mid,
+                            module,
+                            tid,
+                            &mut self.pending_threads,
+                            &mut task,
+                        );
+                    }
+                } else {
+                    if let Some(erased) = sctk::take_erased_from_message(event) {
+                        let api_event = orbit_api::Event::Message(erased);
+                        let (ut, _) = api_utils::unravel_task(
+                            module.toggled,
+                            module.as_mut().update(None, engine, &api_event),
+                        );
+                        task = Some(ut);
+                        super::dispatch::handle_task(
+                            &mut task,
+                            &mid,
+                            tx,
+                            dispath_tx,
+                            &mut self.pending_threads,
+                        );
+                    }
                 };
-                for tid in targets.clone() {
-                    handle_platform_event_internal(
-                        engine,
-                        tx,
-                        dispath_tx,
-                        event,
-                        &mid,
-                        module,
-                        &tid,
-                        &mut self.pending_threads,
-                        &mut task,
-                    );
-                }
             }
         } else {
             for (mid, module) in self.modules.iter_mut() {
@@ -482,7 +500,7 @@ impl ModuleManager {
                     // TODO: this shouldn't happen so maybe emit a warning or something?
                     continue;
                 };
-                for tid in targets.clone() {
+                for tid in targets {
                     handle_platform_event_internal(
                         engine,
                         tx,
@@ -490,7 +508,7 @@ impl ModuleManager {
                         event,
                         mid,
                         module,
-                        &tid,
+                        tid,
                         &mut self.pending_threads,
                         &mut task,
                     );

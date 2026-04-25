@@ -217,12 +217,16 @@ impl OrbitModule for Wallpaper {
 
     fn update<'a>(
         &mut self,
-        tid: TargetId,
+        tid: Option<TargetId>,
         engine: &mut Engine<'a>,
         event: &Event<Self::Message>,
     ) -> Task<Msg> {
         match event {
             &Event::Resized { size } => {
+                let Some(tid) = tid else {
+                    return Task::None;
+                };
+
                 if let Some(target) = self.targets.get_mut(&tid) {
                     if target.size == size {
                         return Task::None;

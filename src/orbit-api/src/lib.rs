@@ -169,7 +169,7 @@ pub trait OrbitModule: Default + 'static {
     // UI
     fn update<'a>(
         &mut self,
-        tid: ui::graphics::TargetId,
+        tid: Option<ui::graphics::TargetId>,
         engine: &mut Engine<'a>,
         event: &Event<Self::Message>,
     ) -> Task<Self::Message> {

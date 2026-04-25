@@ -187,7 +187,7 @@ impl OrbitModule for Launcher {
 
     fn update<'a>(
         &mut self,
-        _tid: TargetId,
+        _tid: Option<TargetId>,
         engine: &mut Engine<'a>,
         event: &Event<Self::Message>,
     ) -> Task<Msg> {

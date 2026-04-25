@@ -32,17 +32,30 @@ impl UnraveledTask {
     }
 }
 
-pub fn unravel_task(t: Task<ErasedMsg>) -> (UnraveledTask, bool) {
-    fn unravel_task_internal(t: Task<ErasedMsg>, ut: &mut UnraveledTask, redraw: &mut bool) {
+pub fn unravel_task(shown: bool, t: Task<ErasedMsg>) -> (UnraveledTask, bool) {
+    fn unravel_task_internal(
+        shown: bool,
+        t: Task<ErasedMsg>,
+        ut: &mut UnraveledTask,
+        redraw: &mut bool,
+    ) {
         match t {
             Task::None => (),
             Task::Batch(tasks) => {
                 for task in tasks {
-                    unravel_task_internal(task, ut, redraw);
+                    unravel_task_internal(shown, task, ut, redraw);
                 }
             }
-            Task::RedrawTarget => *redraw = true,
-            Task::RedrawModule => ut.redraw_module = true,
+            Task::RedrawTarget => {
+                if shown {
+                    *redraw = true
+                }
+            }
+            Task::RedrawModule => {
+                if shown {
+                    ut.redraw_module = true
+                }
+            }
             Task::ExitModule => ut.exit_module = true,
             Task::ExitOrbit => ut.exit_orbit = true,
             Task::Spawn(pin) => ut.tasks.get_or_insert_default().push(pin),
@@ -51,7 +64,7 @@ pub fn unravel_task(t: Task<ErasedMsg>) -> (UnraveledTask, bool) {
 
     let mut utask = UnraveledTask::default();
     let mut redraw = false;
-    unravel_task_internal(t, &mut utask, &mut redraw);
+    unravel_task_internal(shown, t, &mut utask, &mut redraw);
     (utask, redraw)
 }
 
