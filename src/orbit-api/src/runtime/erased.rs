@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use std::{any::Any, rc::Rc};
 
 use ui::{
-    context as ui_ctx,
+    context::{self as ui_ctx, ViewState},
     layout::Node,
     primitive::Instance,
     widget::{Element, IntoElement, Widget},
@@ -132,6 +132,26 @@ where
             });
         }
     }
+    fn handle(&mut self, ctx: &mut ui_ctx::EventCtx<N>) {
+        let mut tmp_ui = set_ui_state_to::<M, N>(ctx.ui);
+        let mut m_ctx = ui_ctx::EventCtx::new(
+            ctx.globals,
+            ctx.text,
+            &mut tmp_ui,
+            ctx.event,
+            ctx.layout,
+            ctx.current_node_id(),
+        );
+
+        self.with_target(|w| w.handle(&mut m_ctx));
+
+        let msgs = m_ctx.ui.take();
+        for m in msgs {
+            ctx.ui.emit((self.f)(m));
+        }
+
+        set_ui_state_back(ctx.ui, tmp_ui);
+    }
 }
 
 impl<M, N, F> Widget<N> for MappedNode<M, N, F>
@@ -192,11 +212,16 @@ where
         r
     }
 
-    fn children_offset(
-        &self,
-        view_state: &mut std::collections::HashMap<ui_ctx::Id, Box<dyn Any>>,
-    ) -> (i32, i32) {
+    fn children_offset(&self, view_state: &mut ViewState) -> (i32, i32) {
         self.with_target(|w| w.children_offset(view_state))
+    }
+
+    fn prepare(&mut self, ctx: &mut ui_ctx::PrepareCtx) {
+        self.with_target(|w| w.prepare(ctx));
+    }
+
+    fn prepare_overlay(&mut self, ctx: &mut ui_ctx::PrepareCtx) {
+        self.with_target(|w| w.prepare_overlay(ctx));
     }
 
     fn paint(&mut self, ctx: &mut ui_ctx::PaintCtx, out: &mut Vec<Instance>) {
@@ -208,20 +233,10 @@ where
     }
 
     fn handle(&mut self, ctx: &mut ui_ctx::EventCtx<N>) {
-        let mut tmp_ui = set_ui_state_to::<M, N>(ctx.ui);
-        let mut m_ctx = ui_ctx::EventCtx {
-            event: ctx.event,
-            globals: ctx.globals,
-            ui: &mut tmp_ui,
-        };
+        self.handle(ctx);
+    }
 
-        self.with_target(|w| w.handle(&mut m_ctx));
-
-        let msgs = m_ctx.ui.take();
-        for m in msgs {
-            ctx.ui.emit((self.f)(m));
-        }
-
-        set_ui_state_back(ctx.ui, tmp_ui);
+    fn handle_after(&mut self, ctx: &mut ui_ctx::EventCtx<N>) {
+        self.handle(ctx);
     }
 }

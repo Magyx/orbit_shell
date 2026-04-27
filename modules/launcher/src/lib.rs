@@ -456,7 +456,7 @@ impl OrbitModule for Launcher {
         // ---- Body ----
         let body: Element<Msg> = if !self.results.is_empty() {
             Scrollable::new(results_col)
-                .size(Size::new(Length::Grow, Length::Fit))
+                .size(Size::new(Length::Grow, Length::Grow))
                 .into()
         } else if !self.query.is_empty() {
             Column::new(el![
