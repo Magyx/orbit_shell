@@ -17,3 +17,10 @@ pub fn orbit_config(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
     TokenStream::from(expanded)
 }
+
+mod plugin;
+
+#[proc_macro]
+pub fn orbit_plugin(input: TokenStream) -> TokenStream {
+    plugin::orbit_plugin_impl(input)
+}

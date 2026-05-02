@@ -4,6 +4,7 @@ use serde::{Serialize, de::DeserializeOwned};
 use ui::{sctk::SctkEvent, widget::Element};
 
 pub use orbit_macros::orbit_config;
+pub use orbit_macros::orbit_plugin;
 pub use tracing;
 pub use ui;
 #[doc(hidden)]
@@ -16,8 +17,6 @@ pub use serde;
 pub use serde_json;
 #[doc(hidden)]
 pub use serde_yml;
-
-mod macros;
 
 pub type Event<M> = ui::event::Event<M, SctkEvent>;
 pub type Engine<'a> = ui::graphics::Engine<'a, ErasedMsg>;

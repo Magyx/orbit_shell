@@ -253,12 +253,10 @@ impl OrbitModule for LockScreen {
 }
 
 orbit_plugin! {
-    module = LockScreen,
-    manifest = {
-        name: "lockscreen",
-        commands: [],
-        options: Options::Lock(LockOptions { size: Size::new(0, 0), output: Some(OutputSet::All) }
-        ),
-        show_on_startup: false,
-    },
+    module: LockScreen,
+    name: "lockscreen",
+    options: Options::Lock(LockOptions {
+        size: Size::new(0, 0),
+        output: Some(OutputSet::All),
+    }),
 }

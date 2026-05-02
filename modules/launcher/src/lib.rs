@@ -482,19 +482,16 @@ impl OrbitModule for Launcher {
 }
 
 orbit_plugin! {
-    module = Launcher,
-    manifest = {
-        name: "launcher",
-        commands: [("refresh", Msg::Refresh)],
-        options: Options::Layer(LayerOptions {
-            layer: Layer::Overlay,
-            size: Size::new(600, 420),
-            anchors: Anchor::empty(), // center by default
-            exclusive_zone: 0,
-            keyboard_interactivity: KeyboardInteractivity::Exclusive,
-            namespace: Some("orbit-launcher".to_string()),
-            output: Some(OutputSet::Active),
-        }),
-        show_on_startup: false,
-    },
+    module: Launcher,
+    name: "launcher",
+    options: Options::Layer(LayerOptions {
+        layer: Layer::Overlay,
+        size: Size::new(600, 420),
+        anchors: Anchor::empty(),
+        exclusive_zone: 0,
+        keyboard_interactivity: KeyboardInteractivity::Exclusive,
+        namespace: Some("orbit-launcher".to_string()),
+        output: Some(OutputSet::Active),
+    }),
+    commands: [("refresh", Msg::Refresh)],
 }

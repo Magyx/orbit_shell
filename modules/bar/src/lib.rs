@@ -140,19 +140,17 @@ impl OrbitModule for Bar {
 }
 
 orbit_plugin! {
-    module = Bar,
-    manifest = {
-        name: "bar",
-        commands: [],
-        options: Options::Layer(LayerOptions {
-            layer: Layer::Top,
-            size: Size::new(0, 32),
-            anchors: Anchor::TOP | Anchor::LEFT | Anchor::RIGHT,
-            exclusive_zone: 32,
-            keyboard_interactivity: KeyboardInteractivity::OnDemand,
-            namespace: Some("bar".to_string()),
-            output: Some(OutputSet::All),
-        }),
-        show_on_startup: true,
-    },
+    module: Bar,
+    name: "bar",
+    options: Options::Layer(LayerOptions {
+        layer: Layer::Top,
+        size: Size::new(0, 32),
+        anchors: Anchor::TOP | Anchor::LEFT | Anchor::RIGHT,
+        exclusive_zone: 32,
+        keyboard_interactivity: KeyboardInteractivity::OnDemand,
+        namespace: Some("bar".to_string()),
+        output: Some(OutputSet::All),
+    }),
+    commands: [],
+    show_on_startup: true,
 }

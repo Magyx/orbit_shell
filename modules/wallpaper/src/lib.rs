@@ -303,18 +303,16 @@ impl OrbitModule for Wallpaper {
 }
 
 orbit_plugin! {
-    module = Wallpaper,
-    manifest = {
-        name: "wallpaper",
-        commands: [("next", Msg::Cycle)],
-        options: Options::Layer(LayerOptions {
-            layer: Layer::Background,
-            size: Size::new(0, 0),
-            anchors: Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT,
-            exclusive_zone: -1,
-            keyboard_interactivity: KeyboardInteractivity::OnDemand,
-            namespace: Some("orbit-wallpaper".to_string()),
-            output: Some(OutputSet::All),
-        }),
-    },
+    module: Wallpaper,
+    name: "wallpaper",
+    options: Options::Layer(LayerOptions {
+        layer: Layer::Background,
+        size: Size::new(0, 0),
+        anchors: Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT,
+        exclusive_zone: -1,
+        keyboard_interactivity: KeyboardInteractivity::OnDemand,
+        namespace: Some("orbit-wallpaper".to_string()),
+        output: Some(OutputSet::All),
+    }),
+    commands: [("next", Msg::Cycle)],
 }
