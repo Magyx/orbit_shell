@@ -283,7 +283,7 @@ impl ModuleManager {
 
         let mut handles = Vec::new();
         super::dispatch::handle_streams(usub.streams, tx, loop_handle, mid, &mut handles);
-        if !tokens.is_empty() {
+        if !handles.is_empty() {
             self.dispatch_tokens
                 .entry(*mid)
                 .or_default()
