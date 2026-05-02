@@ -494,4 +494,5 @@ orbit_plugin! {
         output: Some(OutputSet::Active),
     }),
     commands: [("refresh", Msg::Refresh)],
+    persistent_state: true,
 }

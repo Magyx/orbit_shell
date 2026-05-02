@@ -14,6 +14,7 @@ pub struct Manifest {
     pub commands: &'static [&'static str],
     pub options: ui::sctk::Options,
     pub show_on_startup: bool,
+    pub persistent_state: bool,
 }
 
 pub trait OrbitModuleDyn: 'static {

@@ -12,6 +12,7 @@ struct PluginInput {
     options: Expr,
     commands: Vec<(Expr, Expr)>,
     show_on_startup: Expr,
+    persistent_state: Expr,
     pipelines: Expr,
 }
 
@@ -21,6 +22,7 @@ enum Field {
     Options(Expr),
     Commands(Vec<(Expr, Expr)>),
     ShowOnStartup(Expr),
+    PersistentState(Expr),
     Pipelines(Expr),
 }
 
@@ -34,6 +36,7 @@ impl Parse for Field {
             "name" => Ok(Field::Name(input.parse()?)),
             "options" => Ok(Field::Options(input.parse()?)),
             "show_on_startup" => Ok(Field::ShowOnStartup(input.parse()?)),
+            "persistent_state" => Ok(Field::PersistentState(input.parse()?)),
             "pipelines" => Ok(Field::Pipelines(input.parse()?)),
             "commands" => {
                 let content;
@@ -78,6 +81,7 @@ impl Parse for PluginInput {
         let mut options: Option<Expr> = None;
         let mut commands: Vec<(Expr, Expr)> = Vec::new();
         let mut show_on_startup: Option<Expr> = None;
+        let mut persistent_state: Option<Expr> = None;
         let mut pipelines: Option<Expr> = None;
 
         for field in fields {
@@ -87,6 +91,7 @@ impl Parse for PluginInput {
                 Field::Options(v) => options = Some(v),
                 Field::Commands(v) => commands = v,
                 Field::ShowOnStartup(v) => show_on_startup = Some(v),
+                Field::PersistentState(v) => persistent_state = Some(v),
                 Field::Pipelines(v) => pipelines = Some(v),
             }
         }
@@ -103,6 +108,7 @@ impl Parse for PluginInput {
             options,
             commands,
             show_on_startup: show_on_startup.unwrap_or_else(|| syn::parse_quote!(false)),
+            persistent_state: persistent_state.unwrap_or_else(|| syn::parse_quote!(false)),
             pipelines: pipelines.unwrap_or_else(|| syn::parse_quote!(vec![])),
         })
     }
@@ -115,6 +121,7 @@ pub fn orbit_plugin_impl(input: TokenStream) -> TokenStream {
         options,
         commands,
         show_on_startup,
+        persistent_state,
         pipelines,
     } = syn::parse_macro_input!(input as PluginInput);
 
@@ -388,6 +395,7 @@ pub fn orbit_plugin_impl(input: TokenStream) -> TokenStream {
                     commands: &[#(#cmd_names2),*],
                     options: #options,
                     show_on_startup: #show_on_startup,
+                    persistent_state: #persistent_state,
                 },
                 pipelines: #pipelines,
                 inner: ::std::sync::OnceLock::new(),

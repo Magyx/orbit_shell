@@ -386,6 +386,9 @@ impl ModuleManager {
             }
 
             module.toggled = false;
+            if !module.as_ref().manifest().persistent_state {
+                module.as_mut().cleanup(engine);
+            }
         }
 
         let mut sids: Vec<SurfaceId> = self
