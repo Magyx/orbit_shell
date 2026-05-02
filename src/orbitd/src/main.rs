@@ -241,7 +241,6 @@ impl<'a> Orbit<'a> {
                                         continue;
                                     };
 
-                                    self.sctk.state.remove_surface_by_surface_id(sid);
                                     self.module_manager.remove_sid(
                                         &mut self.engine,
                                         &mut self.sctk,
@@ -356,6 +355,7 @@ impl<'a> Orbit<'a> {
                             let resp = match self.module_manager.rediscover_modules(
                                 &mut self.engine,
                                 &mut self.sctk,
+                                &mut event_loop.handle(),
                                 &mut self.config,
                                 &self.config_path,
                             ) {

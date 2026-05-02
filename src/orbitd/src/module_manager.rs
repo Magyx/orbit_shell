@@ -226,6 +226,7 @@ impl ModuleManager {
         &mut self,
         engine: &mut Engine<'_>,
         sctk: &mut SctkApp,
+        loop_handle: &mut LoopHandle<SctkState>,
         config: &mut Config,
         config_path: &Path,
     ) -> Result<(), String> {
@@ -242,6 +243,8 @@ impl ModuleManager {
             .chain(self.pending_surfaces.keys().copied())
             .collect();
         self.by_surface.clear();
+        self.pending_surfaces.clear();
+        self.by_target.clear();
         sctk.destroy_surfaces(&all_sids);
         for (_mid, tids) in self.by_module.drain() {
             for tid in tids {
@@ -252,6 +255,11 @@ impl ModuleManager {
         for (_mid, handles) in self.dispatch_tokens.drain() {
             for handle in handles {
                 self.pending_threads.push(handle.thread);
+            }
+        }
+        for (_mid, tokens) in self.sub_tokens.drain() {
+            for token in tokens {
+                loop_handle.remove(token);
             }
         }
         self.reap_threads();
