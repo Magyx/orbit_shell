@@ -178,8 +178,8 @@ where
         self.with_target(|widget| widget.set_layout(x, y, w, h));
     }
 
-    fn supplied_id(&self) -> Option<ui_ctx::Id> {
-        self.with_target(|w| w.supplied_id())
+    fn identity_key(&self) -> Option<u64> {
+        self.with_target(|widget| widget.identity_key())
     }
 
     fn set_id(&mut self, id: ui_ctx::Id) {
