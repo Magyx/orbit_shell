@@ -556,12 +556,20 @@ impl ModuleManager {
                 .unwrap_or(false)
                 && (poll_override
                     || engine.poll(tid, &mut Self::do_update, &mut (module, &mut task), tid));
-            engine.render_if_needed(
+            match engine.render_if_needed(
                 tid,
                 need,
                 &|tid, s: &ModuleInfo| s.as_ref().view(tid),
                 module,
-            );
+            ) {
+                Ok(ui::graphics::RenderOutcome::NeedsRerender) => {
+                    tx.send(crate::event::Event::Ui(crate::event::Ui::ForceRedraw(*mid)));
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    tracing::error!("render error: {e:?}");
+                }
+            }
             super::dispatch::handle_task(&mut task, mid, tx, task_tx, &mut self.pending_threads);
         }
     }

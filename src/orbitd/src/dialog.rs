@@ -118,7 +118,9 @@ impl ErrorDialog {
                 &mut (),
                 &(),
             );
-            engine.render_if_needed(tid, need, &error_view, &mut self.errors);
+            if let Err(e) = engine.render_if_needed(tid, need, &error_view, &mut self.errors) {
+                tracing::error!("error dialog render failed: {e:?}");
+            }
         }
     }
 }

@@ -108,9 +108,10 @@ pub struct SctkApp {
 impl SctkApp {
     pub fn new(
         main_tx: mpsc::Sender<crate::Event>,
-    ) -> Result<(loop_channel::Channel<SctkEvent>, Self), &'static str> {
-        let conn = Connection::connect_to_env().map_err(|_| "err")?;
-        let (globals, event_queue) = registry_queue_init(&conn).map_err(|_| "err")?;
+    ) -> Result<(loop_channel::Channel<SctkEvent>, Self), ui::Error> {
+        let conn = Connection::connect_to_env().map_err(ui::error::SctkError::connect)?;
+        let (globals, event_queue) =
+            registry_queue_init(&conn).map_err(ui::error::SctkError::registry_init)?;
         let qh: QueueHandle<SctkState> = event_queue.handle();
 
         let sctk_handler = erased::erase::<OrbitHandler, SctkMessage, _>(move |e| {
@@ -118,11 +119,13 @@ impl SctkApp {
         });
 
         let registry = RegistryState::new(&globals);
-        let compositor = CompositorState::bind(&globals, &qh).map_err(|_| "err")?;
+        let compositor =
+            CompositorState::bind(&globals, &qh).map_err(ui::error::SctkError::bind_global)?;
         let outputs = OutputState::new(&globals, &qh);
         let seats = SeatState::new(&globals, &qh);
-        let layer_shell = LayerShell::bind(&globals, &qh).map_err(|_| "err")?;
-        let xdg_shell = XdgShell::bind(&globals, &qh).map_err(|_| "err")?;
+        let layer_shell =
+            LayerShell::bind(&globals, &qh).map_err(ui::error::SctkError::bind_global)?;
+        let xdg_shell = XdgShell::bind(&globals, &qh).map_err(ui::error::SctkError::bind_global)?;
         let session_lock = SessionLockState::new(&globals, &qh);
         let (tx, rx) = loop_channel::channel::<SctkEvent>();
 
@@ -162,7 +165,10 @@ impl SctkApp {
             Options::Lock(lock_opts) => self
                 .state
                 .lock_session(&self.qh, lock_opts)
-                .unwrap_or_default(),
+                .unwrap_or_else(|e| {
+                    tracing::error!("failed to create lock session surfaces: {e:?}");
+                    vec![]
+                }),
         }
     }
 
@@ -178,7 +184,10 @@ impl SctkApp {
             Options::Lock(lock_options) => self
                 .state
                 .ensure_lock_surfaces(&self.qh, lock_options)
-                .unwrap_or_default()
+                .unwrap_or_else(|e| {
+                    tracing::error!("failed to ensure lock session surfaces: {e:?}");
+                    vec![]
+                })
                 .iter()
                 .map(|(s, _)| s)
                 .copied()

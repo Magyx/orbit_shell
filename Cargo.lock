@@ -3084,9 +3084,8 @@ dependencies = [
 [[package]]
 name = "ui"
 version = "0.1.0"
-source = "git+https://github.com/Magyx/ui_lib.git?rev=d2b04c1235edf25fe085b83cd9757952a74d74c5#d2b04c1235edf25fe085b83cd9757952a74d74c5"
+source = "git+https://github.com/Magyx/ui_lib.git?rev=818dad478ac2ab2181e337a0ee97f23ae7cda0f1#818dad478ac2ab2181e337a0ee97f23ae7cda0f1"
 dependencies = [
- "anyhow",
  "bytemuck",
  "calloop",
  "cosmic-text",
