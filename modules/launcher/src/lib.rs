@@ -7,7 +7,10 @@ use orbit_api::{
         event::{KeyEvent, LogicalKey},
         graphics::TargetId,
         model::{Color, Size, Vec4, Wrap},
-        render::texture::{Atlas, TextureHandle},
+        render::{
+            AllocatorKind,
+            texture::{Atlas, TextureHandle},
+        },
         sctk::{Anchor, KeyboardInteractivity, Layer, LayerOptions, Options, OutputSet},
         widget::{Column, Element, Image, Length, Rectangle, Row, Scrollable, Spacer, Text},
     },
@@ -113,7 +116,7 @@ impl Launcher {
 
     fn ensure_atlas(&mut self, engine: &mut Engine<'_>) {
         if self.atlas.is_none() {
-            self.atlas = Some(engine.create_atlas(512, 512));
+            self.atlas = Some(engine.create_atlas(512, 512, AllocatorKind::Skyline));
         }
     }
 
