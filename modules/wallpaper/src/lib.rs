@@ -315,4 +315,5 @@ orbit_plugin! {
         output: Some(OutputSet::All),
     }),
     commands: [("next", Msg::Cycle)],
+    show_on_startup: true,
 }
