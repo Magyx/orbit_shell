@@ -204,6 +204,9 @@ pub fn orbit_plugin_impl(input: TokenStream) -> TokenStream {
                 match event {
                     __Event::RedrawRequested => Some(__Event::RedrawRequested),
                     __Event::Resized { size } => Some(__Event::Resized { size: *size }),
+                    __Event::ScaleFactorChanged { factor } => {
+                        Some(__Event::ScaleFactorChanged { factor: *factor })
+                    }
                     __Event::CursorMoved { position } => {
                         Some(__Event::CursorMoved { position: *position })
                     }

@@ -82,7 +82,12 @@ impl ErrorDialog {
             return;
         };
         let handles = RawWaylandHandles::new(&sctk.conn, &rec.wl_surface);
-        let tid = engine.attach_target(std::sync::Arc::new(handles), rec.size);
+        let sf = rec.scale_factor.max(1) as f64;
+        let phys = Size::new(
+            rec.size.width * rec.scale_factor.max(1) as u32,
+            rec.size.height * rec.scale_factor.max(1) as u32,
+        );
+        let tid = engine.attach_target(std::sync::Arc::new(handles), phys, sf);
         self.targets.push((tid, sid));
     }
     pub fn hide(&mut self, engine: &mut Engine<'_>, sctk: &mut SctkApp) {

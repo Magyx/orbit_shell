@@ -16,7 +16,7 @@ members = [
 ]
 
 [workspace.dependencies]
-ui = { git = "https://github.com/Magyx/ui_lib.git", rev = "6e648645275f34b8f65d81d3bdd2896834d737fd" }
+ui = { git = "https://github.com/Magyx/ui_lib.git", rev = "88574bc54cec3f8fdbb9969c2686dda92141dd9c" }
 serde_yml = "0.0.12"
 serde_json = "1.0.149"
 tracing = "0.1.44"

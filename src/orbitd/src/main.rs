@@ -7,7 +7,10 @@ use std::{
 
 use calloop::{EventLoop, channel as loop_channel};
 use smithay_client_toolkit::reexports::calloop_wayland_source::WaylandSource;
-use ui::sctk::{RawWaylandHandles, SctkEvent, state::SctkState};
+use ui::{
+    model::Size,
+    sctk::{RawWaylandHandles, SctkEvent, state::SctkState},
+};
 
 use orbit_api::{Engine, ErasedMsg};
 use orbit_common::{config, watcher::ConfigWatcher};
@@ -223,8 +226,13 @@ impl<'a> Orbit<'a> {
                                             &self.sctk.conn,
                                             &rec.wl_surface,
                                         );
+                                        let sf = rec.scale_factor.max(1) as f64;
+                                        let phys = Size::new(
+                                            rec.size.width * rec.scale_factor.max(1) as u32,
+                                            rec.size.height * rec.scale_factor.max(1) as u32,
+                                        );
                                         let tid =
-                                            self.engine.attach_target(Arc::new(handles), rec.size);
+                                            self.engine.attach_target(Arc::new(handles), phys, sf);
                                         self.module_manager.add_id(mid, (sid, tid));
                                         runtime_tx.send(Event::Ui(event::Ui::ForceRedraw(mid)));
                                     } else {

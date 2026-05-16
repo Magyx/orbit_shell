@@ -128,9 +128,10 @@ impl Wallpaper {
         let Some(globals) = engine.globals(tid) else {
             return false;
         };
+        let sf = globals.scale;
         let (w, h) = (
-            globals.window_size[0].ceil() as u32,
-            globals.window_size[1].ceil() as u32,
+            (globals.window_size[0] * sf).ceil() as u32,
+            (globals.window_size[1] * sf).ceil() as u32,
         );
         let Some(tex) = Self::load_texture(&path, w, h, engine) else {
             return false;
