@@ -239,8 +239,7 @@ impl OrbitModule for Launcher {
                 LogicalKey::Enter => {
                     if let Some(exec) = self.active_exec().map(str::to_owned) {
                         self.query.clear();
-                        self.results.clear();
-                        self.selected = 0;
+                        self.show_all();
                         let cmd = self.launch_options.clone();
                         Task::spawn(async move { helpers::launch_app(exec, cmd).await })
                     } else {
@@ -250,8 +249,7 @@ impl OrbitModule for Launcher {
 
                 LogicalKey::Escape => {
                     self.query.clear();
-                    self.results.clear();
-                    self.selected = 0;
+                    self.show_all();
                     Task::ExitModule
                 }
 
