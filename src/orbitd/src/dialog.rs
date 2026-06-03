@@ -18,7 +18,7 @@ pub fn error_view(_: &TargetId, errors: &Vec<String>) -> Element<ErasedMsg> {
         .size(Size::splat(Length::Grow))
         .color(Color::RED);
     for error in errors {
-        col.push(Text::new(error.clone(), 14.0));
+        col.push(Text::body(error.clone()));
     }
     Scrollable::new(
         Column::new(el!(col))

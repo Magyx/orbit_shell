@@ -226,7 +226,7 @@ impl OrbitModule for LockScreen {
             // Lock message
             Row::new(el![
                 Spacer::new(Size::splat(Length::Grow)),
-                Text::new(lock_message, 20.0)
+                Text::h2(lock_message)
                     .size(Size::splat(Length::Fit))
                     .wrap(orbit_api::ui::model::Wrap::None),
                 Spacer::new(Size::splat(Length::Grow)),
@@ -236,7 +236,7 @@ impl OrbitModule for LockScreen {
             // Password dots
             Row::new(el![
                 Spacer::new(Size::splat(Length::Grow)),
-                Text::new(dots, 18.0)
+                Text::h3(dots)
                     .size(Size::splat(Length::Fit))
                     .color(status_color)
                     .family(orbit_api::ui::model::Family::Name("Noto Sans Mono".into())),

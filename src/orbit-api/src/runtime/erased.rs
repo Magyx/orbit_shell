@@ -166,6 +166,7 @@ where
             globals: ctx.globals,
             ui: &mut tmp_ui,
             text: ctx.text,
+            theme: ctx.theme,
         };
 
         let out = self.with_target(|w| w.layout(&mut m_ctx));
@@ -206,6 +207,7 @@ where
             globals: ctx.globals,
             ui: &mut tmp_ui,
             text: ctx.text,
+            theme: ctx.theme,
         };
         let r = self.with_target(|w| w.min_height_for_width(&mut m_ctx, width));
         set_ui_state_back(ctx.ui, tmp_ui);

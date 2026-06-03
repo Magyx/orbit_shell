@@ -381,7 +381,7 @@ impl OrbitModule for Launcher {
             format!("  {}_", self.query)
         };
 
-        let search_bar = Row::new(el![Text::new(prompt, 16.0)])
+        let search_bar = Row::new(el![Text::h3(prompt)])
             .size(Size::new(Length::Grow, Length::Fit))
             .padding(Vec4::new(14, 16, 14, 16))
             .color(Color::rgba(40, 40, 45, 255));
@@ -425,11 +425,11 @@ impl OrbitModule for Launcher {
             };
 
             let text_col = Column::new(el![
-                Text::new(entry.name.clone(), 14.0)
+                Text::label(entry.name.clone())
                     .color(name_color)
                     .size(Size::new(Length::Grow, Length::Fit))
                     .wrap(Wrap::None),
-                Text::new(entry.description.clone(), 11.0)
+                Text::caption(entry.description.clone())
                     .color(desc_color)
                     .size(Size::new(Length::Grow, Length::Fit))
                     .wrap(Wrap::None),
@@ -464,7 +464,7 @@ impl OrbitModule for Launcher {
         } else if !self.query.is_empty() {
             Column::new(el![
                 Spacer::new(Size::splat(Length::Grow)),
-                Row::new(el![Text::new("No applications found".to_owned(), 13.0)
+                Row::new(el![Text::body("No applications found".to_owned())
                     .color(Color::rgba(130, 130, 145, 200))])
                 .size(Size::new(Length::Grow, Length::Fit))
                 .padding(Vec4::splat(16)),

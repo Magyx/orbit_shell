@@ -86,7 +86,8 @@ impl WidgetConfig {
                 time_format,
             } => {
                 let time = chrono::Local::now().format(time_format).to_string();
-                let mut text = Text::new(time, *font_size)
+                let mut text = Text::new(time)
+                    .font_size(*font_size)
                     .family(Family::Monospace)
                     .size(Size::splat(Length::Fit));
                 if let Some(family) = font_family {

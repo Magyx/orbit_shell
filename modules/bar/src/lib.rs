@@ -108,7 +108,7 @@ impl OrbitModule for Bar {
             Spacer::new(Size::splat(Length::Grow)),
             Column::new(el![
                 Spacer::new(Size::splat(Length::Grow)),
-                Text::new(self.now.format(&self.cfg.time_format).to_string(), 18.0),
+                Text::h3(self.now.format(&self.cfg.time_format).to_string()),
                 Spacer::new(Size::splat(Length::Grow)),
             ])
             .size(Size::new(Length::Fit, Length::Grow)),
