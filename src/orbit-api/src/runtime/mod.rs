@@ -1,6 +1,7 @@
 use ui::{
     graphics::{Engine, TargetId},
     render::PipelineFactoryFn,
+    theme::Theme,
     widget::Element,
 };
 
@@ -36,7 +37,7 @@ pub trait OrbitModuleDyn: 'static {
         engine: &mut Engine<'a, ErasedMsg>,
         event: &Event<ErasedMsg>,
     ) -> Task<ErasedMsg>;
-    fn view(&self, tid: &TargetId) -> Element<ErasedMsg>;
+    fn view(&self, tid: &TargetId, theme: &Theme) -> Element<ErasedMsg>;
     fn command_message(&self, command: &str) -> Option<ErasedMsg>;
 
     fn subscriptions(&self) -> Subscription<ErasedMsg>;

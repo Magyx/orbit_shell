@@ -363,8 +363,9 @@ pub fn orbit_plugin_impl(input: TokenStream) -> TokenStream {
             fn view(
                 &self,
                 tid: &orbit_api::ui::graphics::TargetId,
+                theme: &orbit_api::ui::theme::Theme,
             ) -> orbit_api::ui::widget::Element<orbit_api::ErasedMsg> {
-                let typed = <#module_ty as orbit_api::OrbitModule>::view(self.inner_ref(), tid);
+                let typed = <#module_ty as orbit_api::OrbitModule>::view(self.inner_ref(), tid, theme);
                 orbit_api::runtime::erased::erase_element(typed)
             }
 

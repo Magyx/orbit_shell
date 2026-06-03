@@ -177,7 +177,11 @@ pub trait OrbitModule: Default + 'static {
         _ = event;
         Task::None
     }
-    fn view(&self, tid: &ui::graphics::TargetId) -> Element<Self::Message>;
+    fn view(
+        &self,
+        tid: &ui::graphics::TargetId,
+        theme: &ui::theme::Theme,
+    ) -> Element<Self::Message>;
 
     fn subscriptions(&self) -> Subscription<Self::Message> {
         Subscription::None

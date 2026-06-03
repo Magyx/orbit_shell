@@ -369,27 +369,27 @@ impl OrbitModule for Launcher {
         }
     }
 
-    fn view(&self, _tid: &TargetId) -> Element<Self::Message> {
+    fn view(
+        &self,
+        _tid: &TargetId,
+        _theme: &orbit_api::ui::theme::Theme,
+    ) -> Element<Self::Message> {
         let icon_sz = self.cfg.icon_size as i32;
 
-        // ---- Search bar ----
         let prompt = if self.query.is_empty() {
             "  Search applications…".to_owned()
         } else {
             format!("  {}_", self.query)
         };
-
         let search_bar = Row::new(el![Text::h3(prompt)])
             .size(Size::new(Length::Grow, Length::Fit))
             .padding(Vec4::new(14, 16, 14, 16))
             .color(Color::rgba(40, 40, 45, 255));
-
         let divider = Rectangle::new(
             Size::new(Length::Grow, Length::Fixed(1)),
             Color::rgba(70, 70, 80, 180),
         );
 
-        // ---- Results ----
         let mut results_col =
             Column::new::<Vec<_>, Element<Msg>>(el!()).size(Size::new(Length::Grow, Length::Fit));
 
@@ -454,7 +454,6 @@ impl OrbitModule for Launcher {
             }
         }
 
-        // ---- Body ----
         let body: Element<Msg> = if !self.results.is_empty() {
             Scrollable::new(results_col)
                 .size(Size::new(Length::Grow, Length::Grow))

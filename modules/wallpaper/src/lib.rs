@@ -263,7 +263,7 @@ impl OrbitModule for Wallpaper {
         }
     }
 
-    fn view(&self, tid: &TargetId) -> Element<Self::Message> {
+    fn view(&self, tid: &TargetId, _theme: &orbit_api::ui::theme::Theme) -> Element<Self::Message> {
         let Some(target) = self.targets.get(tid) else {
             return Rectangle::placeholder().into();
         };

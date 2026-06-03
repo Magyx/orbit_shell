@@ -52,6 +52,7 @@ fn set_ui_state_to<M2, N2>(from: &mut ui_ctx::Context<N2>) -> ui_ctx::Context<M2
     tmp.active_item = from.active_item;
     tmp.kbd_focus_item = from.kbd_focus_item;
     tmp.view_state = std::mem::take(&mut from.view_state);
+    tmp.modifiers = from.modifiers;
     tmp
 }
 
@@ -64,6 +65,7 @@ fn set_ui_state_back<M2, N2>(to: &mut ui_ctx::Context<N2>, mut from: ui_ctx::Con
     to.active_item = from.active_item;
     to.kbd_focus_item = from.kbd_focus_item;
     to.view_state = std::mem::take(&mut from.view_state);
+    to.modifiers = from.modifiers;
 
     if from.take_redraw() {
         to.request_redraw();

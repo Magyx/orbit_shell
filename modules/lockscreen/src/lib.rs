@@ -211,7 +211,11 @@ impl OrbitModule for LockScreen {
         }
     }
 
-    fn view(&self, _tid: &TargetId) -> Element<Self::Message> {
+    fn view(
+        &self,
+        _tid: &TargetId,
+        _theme: &orbit_api::ui::theme::Theme,
+    ) -> Element<Self::Message> {
         let lock_message = self.cfg.message.replace("{username}", &self.username);
         let dots: String = "●".repeat(self.password.len());
         let status_color = match self.state {

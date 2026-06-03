@@ -4,6 +4,7 @@ use std::{collections::HashMap, path::Path};
 use calloop::{LoopHandle, RegistrationToken, channel as loop_channel};
 use orbit_api::{Engine, ErasedMsg};
 use orbit_common::config::Config;
+use ui::theme::Theme;
 use ui::{
     graphics::TargetId,
     render::pipeline::PipelineKey,
@@ -533,6 +534,7 @@ impl ModuleManager {
         &mut self,
         engine: &mut Engine,
         sctk: &mut SctkApp,
+        theme: &Theme,
         tx: &RuntimeSender,
         task_tx: &loop_channel::Sender<(ModuleId, ErasedMsg)>,
         mid: &ModuleId,
@@ -559,7 +561,7 @@ impl ModuleManager {
             match engine.render_if_needed(
                 tid,
                 need,
-                &|tid, s: &ModuleInfo| s.as_ref().view(tid),
+                &|tid, s: &ModuleInfo| s.as_ref().view(tid, theme),
                 module,
             ) {
                 Ok(ui::graphics::RenderOutcome::NeedsRerender) => {
@@ -574,10 +576,12 @@ impl ModuleManager {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn render_module(
         &mut self,
         engine: &mut Engine,
         sctk: &mut SctkApp,
+        theme: Option<Theme>,
         tx: &RuntimeSender,
         task_tx: &loop_channel::Sender<(ModuleId, ErasedMsg)>,
         mid: &ModuleId,
@@ -586,9 +590,10 @@ impl ModuleManager {
         let Some(targets) = self.by_module.get(mid) else {
             return;
         };
+        let theme = theme.unwrap_or_else(|| *engine.theme());
         let targets = targets.to_vec();
         for tid in targets {
-            self.render_target(engine, sctk, tx, task_tx, mid, &tid, poll_override);
+            self.render_target(engine, sctk, &theme, tx, task_tx, mid, &tid, poll_override);
         }
     }
 
@@ -600,9 +605,10 @@ impl ModuleManager {
         task_tx: &loop_channel::Sender<(ModuleId, ErasedMsg)>,
         poll_override: bool,
     ) {
+        let theme = *engine.theme();
         let modules = self.modules.keys().copied().collect::<Vec<ModuleId>>();
         for mid in modules {
-            self.render_module(engine, sctk, tx, task_tx, &mid, poll_override);
+            self.render_module(engine, sctk, Some(theme), tx, task_tx, &mid, poll_override);
         }
     }
 }

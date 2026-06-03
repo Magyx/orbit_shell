@@ -343,6 +343,7 @@ impl<'a> Orbit<'a> {
                                 self.module_manager.render_module(
                                     &mut self.engine,
                                     &mut self.sctk,
+                                    None,
                                     &runtime_tx,
                                     &dispatch_tx,
                                     &mid,
