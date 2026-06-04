@@ -87,6 +87,7 @@ impl WidgetConfig {
             } => {
                 let time = chrono::Local::now().format(time_format).to_string();
                 let mut text = Text::new(time)
+                    .wrap(orbit_api::ui::model::Wrap::None)
                     .font_size(*font_size)
                     .family(Family::Monospace)
                     .size(Size::splat(Length::Fit));
