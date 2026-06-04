@@ -142,7 +142,7 @@ pub trait OrbitModule: Default + 'static {
     type Config: Serialize + DeserializeOwned + Default;
     type Message: Send + Clone + 'static;
 
-    fn cleanup<'a>(&mut self, _engine: &mut Engine<'a>);
+    fn cleanup<'a>(&mut self, engine: &mut Engine<'a>);
 
     // Config
     fn validate_config_raw(cfg: &serde_yml::Value) -> Result<(), String> {
