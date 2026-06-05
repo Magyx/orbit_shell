@@ -390,9 +390,7 @@ impl OrbitModule for Launcher {
             Color::rgba(70, 70, 80, 180),
         );
 
-        let mut results_col =
-            Column::new::<Vec<_>, Element<Msg>>(el!()).size(Size::new(Length::Grow, Length::Fit));
-
+        let mut results_col = Column::empty().size(Size::new(Length::Grow, Length::Fit));
         for (row_idx, &entry_idx) in self.results.iter().enumerate() {
             let Some(entry) = self.entries.get(entry_idx) else {
                 continue;

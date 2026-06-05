@@ -13,7 +13,7 @@ use ui::{
 use crate::sctk::SctkApp;
 
 pub fn error_view(_: &TargetId, errors: &Vec<String>) -> Element<ErasedMsg> {
-    let mut col = Column::new::<Vec<_>, Element<ErasedMsg>>(el!())
+    let mut col = Column::empty()
         .padding(Vec4::splat(10))
         .size(Size::splat(Length::Grow))
         .color(Color::RED);

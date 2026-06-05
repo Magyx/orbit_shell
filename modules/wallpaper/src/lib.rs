@@ -148,12 +148,11 @@ impl Wallpaper {
     }
 
     fn get_min_clock_duration(&self) -> Duration {
-        self.cfg
-            .widgets
-            .iter()
-            .filter_map(|w| w.clock_duration())
-            .min()
-            .unwrap_or(Duration::from_hours(1))
+        let mut durs = Vec::new();
+        for p in &self.cfg.widgets {
+            p.widget.clock_durations(&mut durs);
+        }
+        durs.into_iter().min().unwrap_or(Duration::from_hours(1))
     }
 }
 
@@ -168,25 +167,31 @@ impl OrbitModule for Wallpaper {
     }
 
     fn validate_config(cfg: Self::Config) -> Result<(), String> {
-        let mut errors = Vec::new();
-
-        for widget in cfg.widgets.into_iter() {
+        fn validate_widget(widget: &WidgetConfig, errors: &mut Vec<String>) {
             match widget {
                 WidgetConfig::Clock {
                     font_size,
                     time_format,
                     ..
                 } => {
-                    if font_size <= 0.0 {
+                    if *font_size <= 0.0 {
                         errors.push("- font_size must be > 0".into());
                     }
-
-                    if let Err(e) = chrono::format::StrftimeItems::new(&time_format).parse() {
+                    if let Err(e) = chrono::format::StrftimeItems::new(time_format).parse() {
                         errors.push(format!("- invalid time_format `{time_format}`: {e}"));
                     }
                 }
-                WidgetConfig::None => (),
+                WidgetConfig::Column { children, .. } | WidgetConfig::Row { children, .. } => {
+                    for child in children {
+                        validate_widget(child, errors);
+                    }
+                }
             }
+        }
+
+        let mut errors = Vec::new();
+        for widget in cfg.widgets.into_iter().map(|p| p.widget) {
+            validate_widget(&widget, &mut errors);
         }
 
         if errors.is_empty() {
@@ -207,11 +212,7 @@ impl OrbitModule for Wallpaper {
         }
         self.cfg = config;
 
-        self.widgets.clock = self
-            .cfg
-            .widgets
-            .iter()
-            .any(|w| matches!(w, WidgetConfig::Clock { .. }));
+        self.widgets.clock = self.cfg.widgets.iter().any(|p| p.widget.contains_clock());
 
         false
     }
@@ -273,8 +274,9 @@ impl OrbitModule for Wallpaper {
         ])
         .size(Size::splat(Length::Grow));
 
+        let now = chrono::Local::now();
         for widget in self.cfg.widgets.iter() {
-            widget.place(target, &mut view);
+            widget.place(target, &now, &mut view);
         }
 
         view.into()

@@ -1,10 +1,11 @@
 use std::{borrow::Cow, path::PathBuf, time::Duration};
 
+use chrono::{DateTime, Local};
 use orbit_api::{
     orbit_config,
     ui::{
         model::{Family, Size},
-        widget::{Element, Length, Overlay, Rectangle, Text},
+        widget::{Column, Element, Length, Overlay, Row, Text},
     },
 };
 
@@ -27,7 +28,7 @@ pub struct Config {
     #[serde(default = "default_cycle")]
     pub cycle: String,
     #[serde(default)]
-    pub widgets: Vec<WidgetConfig>,
+    pub widgets: Vec<Placed>,
 }
 
 impl Default for Config {
@@ -37,6 +38,26 @@ impl Default for Config {
             cycle: default_cycle(),
             widgets: Vec::new(),
         }
+    }
+}
+
+#[orbit_config]
+pub struct Placed {
+    #[serde(default)]
+    pub x: f32,
+    #[serde(default)]
+    pub y: f32,
+    #[serde(flatten)]
+    pub widget: WidgetConfig,
+}
+
+impl Placed {
+    pub fn place(&self, target: &PerTarget, now: &DateTime<Local>, on: &mut Overlay<Msg>) {
+        on.push(
+            self.widget.element(now),
+            (target.size.width as f32 * self.x.clamp(0.0, 1.0)).ceil() as i32,
+            (target.size.height as f32 * self.y.clamp(0.0, 1.0)).ceil() as i32,
+        );
     }
 }
 
@@ -51,8 +72,6 @@ fn default_time_format() -> String {
 #[serde(tag = "type")]
 pub enum WidgetConfig {
     Clock {
-        x: f32,
-        y: f32,
         #[serde(default = "default_clock_font_size")]
         font_size: f32,
         #[serde(default)]
@@ -60,32 +79,52 @@ pub enum WidgetConfig {
         #[serde(default = "default_time_format")]
         time_format: String,
     },
-    None,
+    Column {
+        #[serde(default)]
+        spacing: i32,
+        children: Vec<WidgetConfig>,
+    },
+    Row {
+        #[serde(default)]
+        spacing: i32,
+        children: Vec<WidgetConfig>,
+    },
 }
 
 impl WidgetConfig {
-    pub fn clock_duration(&self) -> Option<Duration> {
+    pub fn contains_clock(&self) -> bool {
         match self {
-            Self::Clock { time_format, .. } => Some(match time_format {
+            Self::Clock { .. } => true,
+            Self::Column { children, .. } | Self::Row { children, .. } => {
+                children.iter().any(Self::contains_clock)
+            }
+        }
+    }
+
+    pub fn clock_durations(&self, out: &mut Vec<Duration>) {
+        match self {
+            Self::Clock { time_format, .. } => out.push(match time_format {
                 f if f.contains("%f") => Duration::from_millis(100),
                 f if f.contains("%S") => Duration::from_secs(1),
                 f if f.contains("%M") => Duration::from_secs(60),
                 _ => Duration::from_secs(3600),
             }),
-            _ => None,
+            Self::Column { children, .. } | Self::Row { children, .. } => {
+                for c in children {
+                    c.clock_durations(out);
+                }
+            }
         }
     }
 
-    pub fn place(&self, target: &PerTarget, on: &mut Overlay<Msg>) {
-        let (element, x, y): (Element<Msg>, f32, f32) = match self {
+    fn element(&self, now: &DateTime<Local>) -> Element<Msg> {
+        match self {
             WidgetConfig::Clock {
-                x,
-                y,
                 font_size,
                 font_family,
                 time_format,
             } => {
-                let time = chrono::Local::now().format(time_format).to_string();
+                let time = now.format(time_format).to_string();
                 let mut text = Text::new(time)
                     .wrap(orbit_api::ui::model::Wrap::None)
                     .font_size(*font_size)
@@ -94,16 +133,23 @@ impl WidgetConfig {
                 if let Some(family) = font_family {
                     text = text.family(family.clone().into());
                 }
-                (text.into(), *x, *y)
+                text.into()
             }
-            WidgetConfig::None => (Rectangle::placeholder().into(), 0.0, 0.0),
-        };
-
-        on.push(
-            element,
-            (target.size.width as f32 * x.clamp(0.0, 1.0)).ceil() as i32,
-            (target.size.height as f32 * y.clamp(0.0, 1.0)).ceil() as i32,
-        );
+            WidgetConfig::Column { spacing, children } => {
+                let mut col = Column::empty().spacing(*spacing);
+                for child in children {
+                    col.push(child.element(now));
+                }
+                col.into()
+            }
+            WidgetConfig::Row { spacing, children } => {
+                let mut row = Row::empty().spacing(*spacing);
+                for child in children {
+                    row.push(child.element(now));
+                }
+                row.into()
+            }
+        }
     }
 }
 
