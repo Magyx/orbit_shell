@@ -8,7 +8,7 @@ orbit-dbus = { path = "../../src/orbit-dbus" }
 orbit-api = { path = "../orbit-api" }
 orbit-common = { path = "../orbit-common" }
 
-serde_yml = { workspace = true }
+yaml_serde = { workspace = true }
 
 zbus = { workspace = true }
 futures-lite = "2.6.1"

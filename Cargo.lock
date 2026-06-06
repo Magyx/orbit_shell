@@ -1516,14 +1516,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9fbbcab51052fe104eb5e5d351cf728d30a5be1fe14d9be8a3b097481fb97de"
 
 [[package]]
-name = "libyml"
-version = "0.0.5"
+name = "libyaml-rs"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3302702afa434ffa30847a83305f0a69d6abd74293b6554c18ec85c7ef30c980"
-dependencies = [
- "anyhow",
- "version_check",
-]
+checksum = "2e126dda6f34391ab7b444f9922055facc83c07a910da3eb16f1e4d9c45dc777"
 
 [[package]]
 name = "linux-raw-sys"
@@ -1838,9 +1834,9 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
- "serde_yml",
  "tracing",
  "ui",
+ "yaml_serde",
 ]
 
 [[package]]
@@ -1850,9 +1846,9 @@ dependencies = [
  "libc",
  "libloading",
  "notify",
- "serde_yml",
  "tracing",
  "xdg",
+ "yaml_serde",
 ]
 
 [[package]]
@@ -1889,7 +1885,6 @@ dependencies = [
  "orbit-api",
  "orbit-common",
  "orbit-dbus",
- "serde_yml",
  "smithay-client-toolkit",
  "tracing",
  "tracing-appender",
@@ -1897,6 +1892,7 @@ dependencies = [
  "tracing-subscriber",
  "ui",
  "wayland-client",
+ "yaml_serde",
  "zbus",
 ]
 
@@ -2545,21 +2541,6 @@ dependencies = [
  "itoa",
  "ryu",
  "serde",
-]
-
-[[package]]
-name = "serde_yml"
-version = "0.0.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "59e2dd588bf1597a252c3b920e0143eb99b0f76e4e082f4c92ce34fbc9e71ddd"
-dependencies = [
- "indexmap",
- "itoa",
- "libyml",
- "memchr",
- "ryu",
- "serde",
- "version_check",
 ]
 
 [[package]]
@@ -3896,6 +3877,19 @@ name = "y4m"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a5a4b21e1a62b67a2970e6831bc091d7b87e119e7f9791aef9702e3bef04448"
+
+[[package]]
+name = "yaml_serde"
+version = "0.10.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "08c7c1b1a6a7c8a6b2741a6c21a4f8918e51899b111cfa08d1288202656e3975"
+dependencies = [
+ "indexmap",
+ "itoa",
+ "libyaml-rs",
+ "ryu",
+ "serde",
+]
 
 [[package]]
 name = "yazi"

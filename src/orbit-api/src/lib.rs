@@ -16,7 +16,7 @@ pub use serde;
 #[doc(hidden)]
 pub use serde_json;
 #[doc(hidden)]
-pub use serde_yml;
+pub use yaml_serde;
 
 pub type Event<M> = ui::event::Event<M, SctkEvent>;
 pub type Engine<'a> = ui::graphics::Engine<'a, ErasedMsg>;
@@ -145,7 +145,7 @@ pub trait OrbitModule: Default + 'static {
     fn cleanup<'a>(&mut self, engine: &mut Engine<'a>);
 
     // Config
-    fn validate_config_raw(cfg: &serde_yml::Value) -> Result<(), String> {
+    fn validate_config_raw(cfg: &yaml_serde::Value) -> Result<(), String> {
         _ = cfg;
         Ok(())
     }

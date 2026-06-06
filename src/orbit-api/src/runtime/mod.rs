@@ -22,12 +22,12 @@ pub trait OrbitModuleDyn: 'static {
     fn manifest(&self) -> &Manifest;
     fn cleanup<'a>(&mut self, engine: &mut Engine<'a, ErasedMsg>);
 
-    fn validate_config_raw(&self, cfg: &serde_yml::Value) -> Result<(), String>;
-    fn validate_config(&self, cfg: &serde_yml::Value) -> Result<(), String>;
+    fn validate_config_raw(&self, cfg: &yaml_serde::Value) -> Result<(), String>;
+    fn validate_config(&self, cfg: &yaml_serde::Value) -> Result<(), String>;
     fn apply_config<'a>(
         &mut self,
         engine: &mut Engine<'a, ErasedMsg>,
-        config: &serde_yml::Value,
+        config: &yaml_serde::Value,
         options: &mut ui::sctk::Options,
     ) -> bool;
     fn pipelines(&self) -> Vec<(&'static str, PipelineFactoryFn)>;

@@ -5,7 +5,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use serde_yml::{Mapping, Value};
+use yaml_serde::{Mapping, Value};
 
 #[derive(Default, Debug)]
 pub struct Config {
@@ -142,7 +142,7 @@ pub fn load_cfg(base: &Path) -> Result<Config, String> {
         match fs::read_to_string(&path) {
             Ok(text) => {
                 return Config::from_value(
-                    serde_yml::from_str(&text).map_err(|_| "invalid config.yaml")?,
+                    yaml_serde::from_str(&text).map_err(|_| "invalid config.yaml")?,
                 );
             }
             Err(_) if Instant::now() < deadline => {

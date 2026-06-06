@@ -8,7 +8,7 @@ ui = { workspace = true, features = ["sctk"] }
 
 orbit-macros = { path = "../orbit-macros" }
 serde = { version = "1.0.228", features = ["derive"] }
-serde_yml = { workspace = true }
+yaml_serde = { workspace = true }
 serde_json = { workspace = true }
 schemars = { version = "1.2.1", features = ["derive"] }
 

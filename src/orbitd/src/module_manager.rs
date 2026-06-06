@@ -323,13 +323,13 @@ impl ModuleManager {
 
     pub fn load_module(
         engine: &mut Engine<'_>,
-        map: Option<&serde_yml::Value>,
+        map: Option<&yaml_serde::Value>,
         module: &mut ModuleInfo,
     ) -> Result<(), String> {
         module.ensure_loaded()?;
         module
             .as_ref()
-            .validate_config(map.unwrap_or(&serde_yml::Value::Null))?;
+            .validate_config(map.unwrap_or(&yaml_serde::Value::Null))?;
 
         for (key, factory) in module.as_ref().pipelines() {
             engine.register_pipeline(PipelineKey::Other(key), factory);

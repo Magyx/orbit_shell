@@ -163,15 +163,15 @@ pub fn orbit_plugin_impl(input: TokenStream) -> TokenStream {
                 self.inner.get_or_init(<#module_ty as ::std::default::Default>::default)
             }
 
-            fn merged_config_value(raw: &orbit_api::serde_yml::Value) -> orbit_api::serde_yml::Value {
+            fn merged_config_value(raw: &orbit_api::yaml_serde::Value) -> orbit_api::yaml_serde::Value {
                 fn merge(
-                    base: orbit_api::serde_yml::Value,
-                    overlay: &orbit_api::serde_yml::Value,
-                ) -> orbit_api::serde_yml::Value {
+                    base: orbit_api::yaml_serde::Value,
+                    overlay: &orbit_api::yaml_serde::Value,
+                ) -> orbit_api::yaml_serde::Value {
                     match (base, overlay) {
                         (
-                            orbit_api::serde_yml::Value::Mapping(mut b),
-                            orbit_api::serde_yml::Value::Mapping(o),
+                            orbit_api::yaml_serde::Value::Mapping(mut b),
+                            orbit_api::yaml_serde::Value::Mapping(o),
                         ) => {
                             for (k, ov) in o {
                                 match b.remove(k) {
@@ -183,14 +183,14 @@ pub fn orbit_plugin_impl(input: TokenStream) -> TokenStream {
                                     }
                                 }
                             }
-                            orbit_api::serde_yml::Value::Mapping(b)
+                            orbit_api::yaml_serde::Value::Mapping(b)
                         }
-                        (b, orbit_api::serde_yml::Value::Null) => b,
+                        (b, orbit_api::yaml_serde::Value::Null) => b,
                         (_, o) => o.clone(),
                     }
                 }
 
-                let defaults = orbit_api::serde_yml::to_value(
+                let defaults = orbit_api::yaml_serde::to_value(
                     <<#module_ty as orbit_api::OrbitModule>::Config as ::std::default::Default>::default()
                 )
                 .expect("serialize default config");
@@ -292,18 +292,18 @@ pub fn orbit_plugin_impl(input: TokenStream) -> TokenStream {
 
             fn validate_config_raw(
                 &self,
-                cfg: &orbit_api::serde_yml::Value,
+                cfg: &orbit_api::yaml_serde::Value,
             ) -> Result<(), String> {
                 <#module_ty as orbit_api::OrbitModule>::validate_config_raw(cfg)
             }
 
             fn validate_config(
                 &self,
-                cfg: &orbit_api::serde_yml::Value,
+                cfg: &orbit_api::yaml_serde::Value,
             ) -> Result<(), String> {
                 let merged = Self::merged_config_value(cfg);
                 let parsed: <#module_ty as orbit_api::OrbitModule>::Config =
-                    orbit_api::serde_yml::from_value(merged)
+                    orbit_api::yaml_serde::from_value(merged)
                         .map_err(|e| format!("config parse failed: {e}"))?;
                 <#module_ty as orbit_api::OrbitModule>::validate_config(parsed)
             }
@@ -311,12 +311,12 @@ pub fn orbit_plugin_impl(input: TokenStream) -> TokenStream {
             fn apply_config<'a>(
                 &mut self,
                 engine: &mut __Engine<'a, __ErasedMsg>,
-                config: &orbit_api::serde_yml::Value,
+                config: &orbit_api::yaml_serde::Value,
                 options: &mut orbit_api::ui::sctk::Options,
             ) -> bool {
                 let merged = Self::merged_config_value(config);
                 let parsed: <#module_ty as orbit_api::OrbitModule>::Config =
-                    match orbit_api::serde_yml::from_value(merged) {
+                    match orbit_api::yaml_serde::from_value(merged) {
                         Ok(v) => v,
                         Err(e) => {
                             orbit_api::tracing::warn!(
