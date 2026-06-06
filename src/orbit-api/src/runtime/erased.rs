@@ -134,7 +134,7 @@ where
             });
         }
     }
-    fn handle(&mut self, ctx: &mut ui_ctx::EventCtx<N>) {
+    fn handle(&mut self, ctx: &mut ui_ctx::EventCtx<N>, after: bool) {
         let mut tmp_ui = set_ui_state_to::<M, N>(ctx.ui);
         let mut m_ctx = ui_ctx::EventCtx::new(
             ctx.globals,
@@ -145,7 +145,11 @@ where
             ctx.current_node_id(),
         );
 
-        self.with_target(|w| w.handle(&mut m_ctx));
+        if after {
+            self.with_target(|w| w.handle_after(&mut m_ctx));
+        } else {
+            self.with_target(|w| w.handle(&mut m_ctx));
+        }
 
         let msgs = m_ctx.ui.take();
         for m in msgs {
@@ -237,10 +241,10 @@ where
     }
 
     fn handle(&mut self, ctx: &mut ui_ctx::EventCtx<N>) {
-        self.handle(ctx);
+        self.handle(ctx, false);
     }
 
     fn handle_after(&mut self, ctx: &mut ui_ctx::EventCtx<N>) {
-        self.handle(ctx);
+        self.handle(ctx, true);
     }
 }
