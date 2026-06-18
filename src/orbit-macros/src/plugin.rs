@@ -14,6 +14,7 @@ struct PluginInput {
     show_on_startup: Expr,
     persistent_state: Expr,
     pipelines: Expr,
+    settings: Option<syn::Type>,
 }
 
 enum Field {
@@ -24,6 +25,7 @@ enum Field {
     ShowOnStartup(Expr),
     PersistentState(Expr),
     Pipelines(Expr),
+    Settings(syn::Type),
 }
 
 impl Parse for Field {
@@ -38,6 +40,7 @@ impl Parse for Field {
             "show_on_startup" => Ok(Field::ShowOnStartup(input.parse()?)),
             "persistent_state" => Ok(Field::PersistentState(input.parse()?)),
             "pipelines" => Ok(Field::Pipelines(input.parse()?)),
+            "settings" => Ok(Field::Settings(input.parse()?)),
             "commands" => {
                 let content;
                 syn::bracketed!(content in input);
@@ -83,6 +86,7 @@ impl Parse for PluginInput {
         let mut show_on_startup: Option<Expr> = None;
         let mut persistent_state: Option<Expr> = None;
         let mut pipelines: Option<Expr> = None;
+        let mut settings: Option<syn::Type> = None;
 
         for field in fields {
             match field {
@@ -93,6 +97,7 @@ impl Parse for PluginInput {
                 Field::ShowOnStartup(v) => show_on_startup = Some(v),
                 Field::PersistentState(v) => persistent_state = Some(v),
                 Field::Pipelines(v) => pipelines = Some(v),
+                Field::Settings(v) => settings = Some(v),
             }
         }
 
@@ -110,6 +115,7 @@ impl Parse for PluginInput {
             show_on_startup: show_on_startup.unwrap_or_else(|| syn::parse_quote!(false)),
             persistent_state: persistent_state.unwrap_or_else(|| syn::parse_quote!(false)),
             pipelines: pipelines.unwrap_or_else(|| syn::parse_quote!(vec![])),
+            settings,
         })
     }
 }
@@ -123,11 +129,102 @@ pub fn orbit_plugin_impl(input: TokenStream) -> TokenStream {
         show_on_startup,
         persistent_state,
         pipelines,
+        settings,
     } = syn::parse_macro_input!(input as PluginInput);
 
     let cmd_names: Vec<&Expr> = commands.iter().map(|(n, _)| n).collect();
     let cmd_names2 = cmd_names.clone();
     let cmd_msgs: Vec<&Expr> = commands.iter().map(|(_, m)| m).collect();
+
+    let shape_cache = if settings.is_none() {
+        quote! {
+            fn __settings_shape() -> &'static orbit_api::settings::Shape {
+                static SHAPE: ::std::sync::OnceLock<orbit_api::settings::Shape> =
+                    ::std::sync::OnceLock::new();
+                SHAPE.get_or_init(|| {
+                    let root = orbit_api::schemars::schema_for!(
+                        <#module_ty as orbit_api::OrbitModule>::Config
+                    );
+                    // VERIFY: schemars 1.2 Schema -> serde_json::Value.
+                    let json = orbit_api::serde_json::to_value(&root).expect("schema to json");
+                    orbit_api::settings::shape_from_schema(&json)
+                })
+            }
+        }
+    } else {
+        quote! {}
+    };
+
+    let settings_methods = if let Some(settings_ty) = settings {
+        quote! {
+            fn settings_view(
+                &self,
+                cfg: &orbit_api::yaml_serde::Value,
+                theme: &orbit_api::ui::theme::Theme,
+            ) -> orbit_api::ui::widget::Element<orbit_api::ErasedMsg> {
+                let merged = Self::merged_config_value(cfg);
+                let parsed: <#module_ty as orbit_api::OrbitModule>::Config =
+                    orbit_api::yaml_serde::from_value(merged).unwrap_or_default();
+                let typed = <#settings_ty as orbit_api::settings::ModuleSettings>::settings_view(
+                    self.inner_ref(), &parsed, theme,
+                );
+                orbit_api::runtime::erased::erase_element(typed)
+            }
+
+            fn settings_update(
+                &self,
+                cfg: &mut orbit_api::yaml_serde::Value,
+                event: &__Event<__ErasedMsg>,
+            ) -> orbit_api::SettingsOutcome {
+                type __SMsg = <#settings_ty as orbit_api::settings::ModuleSettings>::SettingsMessage;
+                let __msg = match Self::map_event::<__SMsg>(event) {
+                    Some(__Event::Message(m)) => m,
+                    _ => return orbit_api::SettingsOutcome::Ignored,
+                };
+                let mut parsed: <#module_ty as orbit_api::OrbitModule>::Config =
+                    orbit_api::yaml_serde::from_value(Self::merged_config_value(cfg)).unwrap_or_default();
+                if <#settings_ty as orbit_api::settings::ModuleSettings>::settings_update(
+                    self.inner_ref(), &mut parsed, &__msg,
+                ) {
+                    *cfg = orbit_api::yaml_serde::to_value(&parsed).expect("reserialize config");
+                    orbit_api::SettingsOutcome::Changed
+                } else {
+                    orbit_api::SettingsOutcome::Unchanged
+                }
+            }
+        }
+    } else {
+        quote! {
+            fn settings_view(
+                &self,
+                cfg: &orbit_api::yaml_serde::Value,
+                theme: &orbit_api::ui::theme::Theme,
+            ) -> orbit_api::ui::widget::Element<orbit_api::ErasedMsg> {
+                let merged = Self::merged_config_value(cfg);
+                orbit_api::runtime::erased::erase_element(
+                    orbit_api::settings::auto_settings_view(self.manifest.name, Self::__settings_shape(), &merged, theme),
+                )
+            }
+
+            fn settings_update(
+                &self,
+                cfg: &mut orbit_api::yaml_serde::Value,
+                event: &__Event<__ErasedMsg>,
+            ) -> orbit_api::SettingsOutcome {
+                let __msg = match Self::map_event::<orbit_api::settings::AutoSettingsMsg>(event) {
+                    Some(__Event::Message(m)) => m,
+                    _ => return orbit_api::SettingsOutcome::Ignored,
+                };
+                let mut merged = Self::merged_config_value(cfg);
+                if orbit_api::settings::auto_settings_update(Self::__settings_shape(), &mut merged, &__msg) {
+                    *cfg = merged;
+                    orbit_api::SettingsOutcome::Changed
+                } else {
+                    orbit_api::SettingsOutcome::Unchanged
+                }
+            }
+        }
+    };
 
     let output = quote! {
         #[doc(hidden)]
@@ -279,6 +376,8 @@ pub fn orbit_plugin_impl(input: TokenStream) -> TokenStream {
                     ExitOrbit => ExitOrbit,
                 }
             }
+
+            #shape_cache
         }
 
         impl orbit_api::runtime::OrbitModuleDyn for __Wrapper {
@@ -288,13 +387,6 @@ pub fn orbit_plugin_impl(input: TokenStream) -> TokenStream {
 
             fn cleanup<'a>(&mut self, engine: &mut __Engine<'a, __ErasedMsg>) {
                 <#module_ty as orbit_api::OrbitModule>::cleanup(self.inner_mut(), engine);
-            }
-
-            fn validate_config_raw(
-                &self,
-                cfg: &orbit_api::yaml_serde::Value,
-            ) -> Result<(), String> {
-                <#module_ty as orbit_api::OrbitModule>::validate_config_raw(cfg)
             }
 
             fn validate_config(
@@ -388,6 +480,8 @@ pub fn orbit_plugin_impl(input: TokenStream) -> TokenStream {
                     <#module_ty as orbit_api::OrbitModule>::subscriptions(self.inner_ref()),
                 )
             }
+
+            #settings_methods
         }
 
         #[doc(hidden)]

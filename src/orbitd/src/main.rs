@@ -173,6 +173,14 @@ impl<'a> Orbit<'a> {
             },
         );
 
+        // Wakeup to reap threads and debounce settings changes
+        let _ = event_loop.handle().insert_source(
+            calloop::timer::Timer::from_duration(std::time::Duration::from_millis(250)),
+            move |_now, _meta, _shared| {
+                calloop::timer::TimeoutAction::ToDuration(std::time::Duration::from_millis(250))
+            },
+        );
+
         self.d_server.start();
         self.config_watcher.start();
 
@@ -608,6 +616,7 @@ impl<'a> Orbit<'a> {
                 self.error_dialog.render(&mut self.engine);
             }
 
+            self.settings.flush_debounced(std::time::Instant::now());
             self.module_manager.reap_threads();
         }
 

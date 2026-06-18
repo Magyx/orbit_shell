@@ -56,6 +56,9 @@ impl ModuleManager {
     pub fn len(&self) -> usize {
         self.modules.len()
     }
+    pub fn modules(&self) -> impl Iterator<Item = &ModuleInfo> {
+        self.modules.values()
+    }
 
     pub fn add_pending(&mut self, sid: SurfaceId, mid: ModuleId) {
         self.pending_surfaces.insert(sid, mid);

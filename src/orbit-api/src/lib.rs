@@ -17,6 +17,8 @@ pub use serde;
 pub use serde_json;
 #[doc(hidden)]
 pub use yaml_serde;
+#[doc(hidden)]
+pub mod settings;
 
 pub type Event<M> = ui::event::Event<M, SctkEvent>;
 pub type Engine<'a> = ui::graphics::Engine<'a, ErasedMsg>;
@@ -28,6 +30,12 @@ pub struct ErasedMsg {
 impl fmt::Debug for ErasedMsg {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("ErasedMsg(..)")
+    }
+}
+
+impl Clone for ErasedMsg {
+    fn clone(&self) -> Self {
+        self.clone_for_send()
     }
 }
 
@@ -145,10 +153,6 @@ pub trait OrbitModule: Default + 'static {
     fn cleanup<'a>(&mut self, engine: &mut Engine<'a>);
 
     // Config
-    fn validate_config_raw(cfg: &yaml_serde::Value) -> Result<(), String> {
-        _ = cfg;
-        Ok(())
-    }
     fn validate_config(cfg: Self::Config) -> Result<(), String> {
         _ = cfg;
         Ok(())
@@ -159,9 +163,7 @@ pub trait OrbitModule: Default + 'static {
         config: Self::Config,
         options: &mut ui::sctk::Options,
     ) -> bool {
-        _ = engine;
-        _ = config;
-        _ = options;
+        let _ = (engine, config, options);
         false
     }
 
@@ -172,9 +174,7 @@ pub trait OrbitModule: Default + 'static {
         engine: &mut Engine<'a>,
         event: &Event<Self::Message>,
     ) -> Task<Self::Message> {
-        _ = tid;
-        _ = engine;
-        _ = event;
+        let _ = (tid, engine, event);
         Task::None
     }
     fn view(
@@ -186,4 +186,22 @@ pub trait OrbitModule: Default + 'static {
     fn subscriptions(&self) -> Subscription<Self::Message> {
         Subscription::None
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SettingsOutcome {
+    Ignored,
+    Unchanged,
+    Changed,
+}
+
+pub trait ModuleSettings: OrbitModule {
+    type SettingsMessage: Send + Clone + 'static;
+
+    fn settings_view(
+        &self,
+        cfg: &Self::Config,
+        theme: &ui::theme::Theme,
+    ) -> Element<Self::SettingsMessage>;
+    fn settings_update(&self, cfg: &mut Self::Config, msg: &Self::SettingsMessage) -> bool;
 }
