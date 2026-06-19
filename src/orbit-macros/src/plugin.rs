@@ -131,18 +131,6 @@ pub fn orbit_plugin_impl(input: TokenStream) -> TokenStream {
 
     let output = quote! {
         #[doc(hidden)]
-        use orbit_api::{
-            Subscription as __Sub,
-            Task as __Task,
-            ErasedMsg as __ErasedMsg,
-            Event as __Event,
-            ui::{
-                graphics::{Engine as __Engine, TargetId as __TargetId},
-                render::pipeline::Pipeline as __Pipeline,
-            },
-        };
-
-        #[doc(hidden)]
         struct __Wrapper {
             manifest: orbit_api::runtime::Manifest,
             pipelines: ::std::vec::Vec<(&'static str, orbit_api::ui::render::PipelineFactoryFn)>,
@@ -199,32 +187,32 @@ pub fn orbit_plugin_impl(input: TokenStream) -> TokenStream {
             }
 
             fn map_event<M: Send + Clone + 'static>(
-                event: &__Event<__ErasedMsg>,
-            ) -> Option<__Event<M>> {
+                event: &orbit_api::Event<orbit_api::ErasedMsg>,
+            ) -> Option<orbit_api::Event<M>> {
                 match event {
-                    __Event::RedrawRequested => Some(__Event::RedrawRequested),
-                    __Event::Resized { size } => Some(__Event::Resized { size: *size }),
-                    __Event::ScaleFactorChanged { factor } => {
-                        Some(__Event::ScaleFactorChanged { factor: *factor })
+                    orbit_api::Event::RedrawRequested => Some(orbit_api::Event::RedrawRequested),
+                    orbit_api::Event::Resized { size } => Some(orbit_api::Event::Resized { size: *size }),
+                    orbit_api::Event::ScaleFactorChanged { factor } => {
+                        Some(orbit_api::Event::ScaleFactorChanged { factor: *factor })
                     }
-                    __Event::CursorMoved { position } => {
-                        Some(__Event::CursorMoved { position: *position })
+                    orbit_api::Event::CursorMoved { position } => {
+                        Some(orbit_api::Event::CursorMoved { position: *position })
                     }
-                    __Event::MouseInput { button, state } => Some(__Event::MouseInput {
+                    orbit_api::Event::MouseInput { button, state } => Some(orbit_api::Event::MouseInput {
                         button: *button,
                         state: *state,
                     }),
-                    __Event::MouseWheel(d) => Some(__Event::MouseWheel(*d)),
-                    __Event::Key(k) => Some(__Event::Key(k.clone())),
-                    __Event::Text(t) => Some(__Event::Text(t.clone())),
-                    __Event::ModifiersChanged(m) => Some(__Event::ModifiersChanged(*m)),
-                    __Event::Platform(e) => Some(__Event::Platform(e.clone())),
-                    __Event::Message(erased_msg) => erased_msg.message::<M>().map(__Event::Message),
+                    orbit_api::Event::MouseWheel(d) => Some(orbit_api::Event::MouseWheel(*d)),
+                    orbit_api::Event::Key(k) => Some(orbit_api::Event::Key(k.clone())),
+                    orbit_api::Event::Text(t) => Some(orbit_api::Event::Text(t.clone())),
+                    orbit_api::Event::ModifiersChanged(m) => Some(orbit_api::Event::ModifiersChanged(*m)),
+                    orbit_api::Event::Platform(e) => Some(orbit_api::Event::Platform(e.clone())),
+                    orbit_api::Event::Message(erased_msg) => erased_msg.message::<M>().map(orbit_api::Event::Message),
                 }
             }
 
-            fn map_sub<M: Send + Clone + 'static>(sub: __Sub<M>) -> __Sub<orbit_api::ErasedMsg> {
-                use __Sub::*;
+            fn map_sub<M: Send + Clone + 'static>(sub: orbit_api::Subscription<M>) -> orbit_api::Subscription<orbit_api::ErasedMsg> {
+                use orbit_api::Subscription::*;
                 match sub {
                     None => None,
                     Interval { every, message } => Interval {
@@ -260,9 +248,9 @@ pub fn orbit_plugin_impl(input: TokenStream) -> TokenStream {
             }
 
             fn map_task<M: Send + Clone + 'static>(
-                task: __Task<M>,
-            ) -> __Task<orbit_api::ErasedMsg> {
-                use __Task::*;
+                task: orbit_api::Task<M>,
+            ) -> orbit_api::Task<orbit_api::ErasedMsg> {
+                use orbit_api::Task::*;
                 match task {
                     None => None,
                     Batch(v) => Batch(v.into_iter().map(Self::map_task).collect()),
@@ -271,7 +259,7 @@ pub fn orbit_plugin_impl(input: TokenStream) -> TokenStream {
                             let msg = fut.await;
                             orbit_api::ErasedMsg::new(msg)
                         };
-                        __Task::spawn(fut)
+                        orbit_api::Task::spawn(fut)
                     }
                     RedrawTarget => RedrawTarget,
                     RedrawModule => RedrawModule,
@@ -286,7 +274,7 @@ pub fn orbit_plugin_impl(input: TokenStream) -> TokenStream {
                 &self.manifest
             }
 
-            fn cleanup<'a>(&mut self, engine: &mut __Engine<'a, __ErasedMsg>) {
+            fn cleanup<'a>(&mut self, engine: &mut orbit_api::ui::graphics::Engine<'a, orbit_api::ErasedMsg>) {
                 <#module_ty as orbit_api::OrbitModule>::cleanup(self.inner_mut(), engine);
             }
 
@@ -310,7 +298,7 @@ pub fn orbit_plugin_impl(input: TokenStream) -> TokenStream {
 
             fn apply_config<'a>(
                 &mut self,
-                engine: &mut __Engine<'a, __ErasedMsg>,
+                engine: &mut orbit_api::ui::graphics::Engine<'a, orbit_api::ErasedMsg>,
                 config: &orbit_api::yaml_serde::Value,
                 options: &mut orbit_api::ui::sctk::Options,
             ) -> bool {
@@ -342,10 +330,10 @@ pub fn orbit_plugin_impl(input: TokenStream) -> TokenStream {
 
             fn update<'a>(
                 &mut self,
-                tid: Option<__TargetId>,
-                engine: &mut __Engine<'a, __ErasedMsg>,
-                event: &__Event<__ErasedMsg>,
-            ) -> __Task<__ErasedMsg> {
+                tid: Option<orbit_api::ui::graphics::TargetId>,
+                engine: &mut orbit_api::ui::graphics::Engine<'a, orbit_api::ErasedMsg>,
+                event: &orbit_api::Event<orbit_api::ErasedMsg>,
+            ) -> orbit_api::Task<orbit_api::ErasedMsg> {
                 type __Msg = <#module_ty as orbit_api::OrbitModule>::Message;
                 match Self::map_event::<__Msg>(event) {
                     Some(e) => Self::map_task(
@@ -356,7 +344,7 @@ pub fn orbit_plugin_impl(input: TokenStream) -> TokenStream {
                             &e,
                         ),
                     ),
-                    _ => __Task::None,
+                    _ => orbit_api::Task::None,
                 }
             }
 
@@ -383,7 +371,7 @@ pub fn orbit_plugin_impl(input: TokenStream) -> TokenStream {
                 }
             }
 
-            fn subscriptions(&self) -> __Sub<orbit_api::ErasedMsg> {
+            fn subscriptions(&self) -> orbit_api::Subscription<orbit_api::ErasedMsg> {
                 Self::map_sub::<<#module_ty as orbit_api::OrbitModule>::Message>(
                     <#module_ty as orbit_api::OrbitModule>::subscriptions(self.inner_ref()),
                 )
