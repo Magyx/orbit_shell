@@ -146,22 +146,20 @@ pub trait OrbitModule: Default + 'static {
 
     // Config
     fn validate_config_raw(cfg: &yaml_serde::Value) -> Result<(), String> {
-        _ = cfg;
+        let _ = cfg;
         Ok(())
     }
     fn validate_config(cfg: Self::Config) -> Result<(), String> {
-        _ = cfg;
+        let _ = cfg;
         Ok(())
     }
     fn apply_config<'a>(
         &mut self,
         engine: &mut Engine<'a>,
-        config: Self::Config,
+        cfg: Self::Config,
         options: &mut ui::sctk::Options,
     ) -> bool {
-        _ = engine;
-        _ = config;
-        _ = options;
+        let _ = (engine, cfg, options);
         false
     }
 
@@ -172,9 +170,7 @@ pub trait OrbitModule: Default + 'static {
         engine: &mut Engine<'a>,
         event: &Event<Self::Message>,
     ) -> Task<Self::Message> {
-        _ = tid;
-        _ = engine;
-        _ = event;
+        let _ = (tid, engine, event);
         Task::None
     }
     fn view(
