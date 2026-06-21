@@ -190,6 +190,7 @@ impl OrbitModule for Launcher {
 
     fn update<'a>(
         &mut self,
+        _ctl: &mut orbit_api::OrbitCtl,
         _tid: Option<TargetId>,
         engine: &mut Engine<'a>,
         event: &Event<Self::Message>,

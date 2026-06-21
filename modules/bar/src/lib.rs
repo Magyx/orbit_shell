@@ -91,6 +91,7 @@ impl OrbitModule for Bar {
 
     fn update<'a>(
         &mut self,
+        _ctl: &mut orbit_api::OrbitCtl,
         _tid: Option<TargetId>,
         _engine: &mut Engine<'a>,
         event: &Event<Self::Message>,

@@ -9,6 +9,7 @@ pub use tracing;
 pub use ui;
 #[doc(hidden)]
 pub mod runtime;
+pub use resource::*;
 #[doc(hidden)]
 pub use schemars;
 #[doc(hidden)]
@@ -17,6 +18,8 @@ pub use serde;
 pub use serde_json;
 #[doc(hidden)]
 pub use yaml_serde;
+
+mod resource;
 
 pub type Event<M> = ui::event::Event<M, SctkEvent>;
 pub type Engine<'a> = ui::graphics::Engine<'a, ErasedMsg>;
@@ -166,11 +169,21 @@ pub trait OrbitModule: Default + 'static {
     // UI
     fn update<'a>(
         &mut self,
+        ctl: &mut OrbitCtl<'_>,
         tid: Option<ui::graphics::TargetId>,
         engine: &mut Engine<'a>,
         event: &Event<Self::Message>,
     ) -> Task<Self::Message> {
-        let _ = (tid, engine, event);
+        let _ = (ctl, tid, engine, event);
+        Task::None
+    }
+    fn on_broadcast(
+        &mut self,
+        ctl: &mut OrbitCtl<'_>,
+        tid: Option<ui::graphics::TargetId>,
+        key: &'static str,
+    ) -> Task<Self::Message> {
+        let _ = (ctl, tid, key);
         Task::None
     }
     fn view(

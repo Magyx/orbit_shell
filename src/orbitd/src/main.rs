@@ -210,7 +210,7 @@ impl<'a> Orbit<'a> {
 
                         match ui_event {
                             event::Ui::Orbit(msg) => match msg {
-                                event::SctkMessage::SurfaceConfigured(id) => {
+                                event::OrbitMessage::SurfaceConfigured(id) => {
                                     let Some(sid) =
                                         self.sctk.state.surface_id_by_protocol_id(id).copied()
                                     else {
@@ -233,6 +233,22 @@ impl<'a> Orbit<'a> {
                                         let tid =
                                             self.engine.attach_target(Arc::new(handles), phys, sf);
                                         self.module_manager.add_id(mid, (sid, tid));
+
+                                        if let Some(output) = self.sctk.get_output(&sid)
+                                            && let Some(info) = self.sctk.state.outputs.info(output)
+                                        {
+                                            self.module_manager.set_target_output(
+                                                tid,
+                                                orbit_api::OutputInfo::new(
+                                                    info.id,
+                                                    info.name.clone(),
+                                                    info.logical_size,
+                                                    info.logical_position,
+                                                    info.scale_factor,
+                                                ),
+                                            );
+                                        }
+
                                         runtime_tx.send(Event::Ui(event::Ui::ForceRedraw(mid)));
                                     } else {
                                         self.error_dialog.try_attach_pending(
@@ -242,8 +258,7 @@ impl<'a> Orbit<'a> {
                                         );
                                     }
                                 }
-
-                                event::SctkMessage::SurfaceDestroyed(id) => {
+                                event::OrbitMessage::SurfaceDestroyed(id) => {
                                     let Some(&sid) = self.sctk.state.surface_id_by_protocol_id(id)
                                     else {
                                         continue;
@@ -256,7 +271,7 @@ impl<'a> Orbit<'a> {
                                     );
                                     self.error_dialog.remove_sid(sid);
                                 }
-                                event::SctkMessage::OutputCreated => {
+                                event::OrbitMessage::OutputCreated => {
                                     for mid in self.module_manager.module_ids_sorted() {
                                         let module =
                                             self.module_manager.module(mid).expect("just found");
@@ -273,6 +288,16 @@ impl<'a> Orbit<'a> {
                                             self.module_manager.add_pending(sid, mid);
                                         }
                                     }
+                                }
+                                event::OrbitMessage::BroadCast { from, scope, key } => {
+                                    self.module_manager.route_broadcast(
+                                        &mut self.engine,
+                                        &runtime_tx,
+                                        &dispatch_tx,
+                                        from,
+                                        scope,
+                                        key,
+                                    );
                                 }
                             },
                             event::Ui::Sctk(sctk_event) => {

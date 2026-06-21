@@ -1,6 +1,6 @@
 use std::sync::mpsc;
 
-use orbit_api::ErasedMsg;
+use orbit_api::{ErasedMsg, OutputTag};
 use orbit_common::config::ConfigEvent;
 use orbit_dbus::DbusEvent;
 use ui::sctk::SctkEvent;
@@ -41,10 +41,15 @@ pub enum Event {
 }
 
 #[derive(Debug)]
-pub enum SctkMessage {
+pub enum OrbitMessage {
     OutputCreated,
     SurfaceDestroyed(u32),
     SurfaceConfigured(u32),
+    BroadCast {
+        from: ModuleId,
+        scope: Option<OutputTag>,
+        key: &'static str,
+    },
 }
 
 #[derive(Debug)]
@@ -55,7 +60,7 @@ pub enum FromDispatch {
 
 #[derive(Debug)]
 pub enum Ui {
-    Orbit(SctkMessage),
+    Orbit(OrbitMessage),
     Sctk(SctkEvent),
     Module(ModuleId, SctkEvent),
     Result(FromDispatch, ModuleId, ErasedMsg),

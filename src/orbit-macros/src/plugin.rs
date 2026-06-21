@@ -330,15 +330,16 @@ pub fn orbit_plugin_impl(input: TokenStream) -> TokenStream {
 
             fn update<'a>(
                 &mut self,
+                ctl: &mut orbit_api::OrbitCtl<'_>,
                 tid: Option<orbit_api::ui::graphics::TargetId>,
                 engine: &mut orbit_api::ui::graphics::Engine<'a, orbit_api::ErasedMsg>,
                 event: &orbit_api::Event<orbit_api::ErasedMsg>,
             ) -> orbit_api::Task<orbit_api::ErasedMsg> {
-                type __Msg = <#module_ty as orbit_api::OrbitModule>::Message;
-                match Self::map_event::<__Msg>(event) {
+                match Self::map_event::<<#module_ty as orbit_api::OrbitModule>::Message>(event) {
                     Some(e) => Self::map_task(
                         <#module_ty as orbit_api::OrbitModule>::update(
                             self.inner_mut(),
+                            ctl,
                             tid,
                             engine,
                             &e,
@@ -347,7 +348,18 @@ pub fn orbit_plugin_impl(input: TokenStream) -> TokenStream {
                     _ => orbit_api::Task::None,
                 }
             }
-
+            fn on_broadcast(
+                &mut self,
+                ctl: &mut orbit_api::OrbitCtl<'_>,
+                tid: Option<orbit_api::ui::graphics::TargetId>,
+                key: &'static str,
+            ) -> orbit_api::Task<orbit_api::ErasedMsg> {
+                Self::map_task(
+                    <#module_ty as orbit_api::OrbitModule>::on_broadcast(
+                        self.inner_mut(), ctl, tid, key,
+                    ),
+                )
+            }
             fn view(
                 &self,
                 tid: &orbit_api::ui::graphics::TargetId,

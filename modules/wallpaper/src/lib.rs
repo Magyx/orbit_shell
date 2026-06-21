@@ -7,7 +7,7 @@ use std::{
 };
 
 use orbit_api::{
-    Engine, Event, OrbitModule, Subscription, Task, orbit_plugin,
+    Engine, Event, Lease, OrbitCtl, OrbitModule, OutputInfo, Subscription, Task, orbit_plugin,
     ui::{
         el,
         graphics::TargetId,
@@ -17,6 +17,7 @@ use orbit_api::{
         widget::{ContentFit, Element, Image, Length, Overlay, Rectangle},
     },
 };
+use orbit_keys::WALLPAPER_TEX;
 
 use config::*;
 
@@ -28,11 +29,11 @@ pub enum Msg {
     Cycle,
 }
 
-#[derive(Debug)]
 pub struct PerTarget {
     size: Size<u32>,
     file: PathBuf,
-    tex: TextureHandle,
+    tex: Lease<TextureHandle>,
+    out: OutputInfo,
 }
 
 #[derive(Default, Debug)]
@@ -40,7 +41,7 @@ struct UsedWidgets {
     clock: bool,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default)]
 pub struct Wallpaper {
     widgets: UsedWidgets,
 
@@ -100,6 +101,15 @@ impl Wallpaper {
         candidates.into_iter().next()
     }
 
+    fn place_tex(
+        ctl: &mut OrbitCtl<'_>,
+        out: &OutputInfo,
+        tex: TextureHandle,
+    ) -> Option<Lease<TextureHandle>> {
+        ctl.publish_on(out, WALLPAPER_TEX, tex);
+        ctl.lease_on(out, WALLPAPER_TEX)
+    }
+
     fn load_texture<'a>(
         file: &Path,
         width: u32,
@@ -118,7 +128,13 @@ impl Wallpaper {
         }
     }
 
-    fn ensure_texture_loaded(&mut self, tid: &TargetId, engine: &mut Engine<'_>) -> bool {
+    fn ensure_texture_loaded(
+        &mut self,
+        ctl: &mut OrbitCtl<'_>,
+        tid: &TargetId,
+        out: OutputInfo,
+        engine: &mut Engine<'_>,
+    ) -> bool {
         if self.targets.contains_key(tid) || !self.cfg.source.exists() {
             return false;
         }
@@ -136,12 +152,16 @@ impl Wallpaper {
         let Some(tex) = Self::load_texture(&path, w, h, engine) else {
             return false;
         };
+        let Some(lease) = Self::place_tex(ctl, &out, tex) else {
+            return false;
+        };
         self.targets.insert(
             *tid,
             PerTarget {
                 size: Size::new(w, h),
-                tex,
+                tex: lease,
                 file: path,
+                out,
             },
         );
         true
@@ -160,10 +180,8 @@ impl OrbitModule for Wallpaper {
     type Config = Config;
     type Message = Msg;
 
-    fn cleanup<'a>(&mut self, engine: &mut Engine<'a>) {
-        for (_, target) in self.targets.drain() {
-            engine.unload_texture(target.tex);
-        }
+    fn cleanup<'a>(&mut self, _engine: &mut Engine<'a>) {
+        self.targets.clear();
     }
 
     fn validate_config(cfg: Self::Config) -> Result<(), String> {
@@ -219,6 +237,7 @@ impl OrbitModule for Wallpaper {
 
     fn update<'a>(
         &mut self,
+        ctl: &mut orbit_api::OrbitCtl,
         tid: Option<TargetId>,
         engine: &mut Engine<'a>,
         event: &Event<Self::Message>,
@@ -228,6 +247,9 @@ impl OrbitModule for Wallpaper {
                 let Some(tid) = tid else {
                     return Task::None;
                 };
+                let Some(out) = ctl.output_info().cloned() else {
+                    return Task::None;
+                };
 
                 if let Some(target) = self.targets.get_mut(&tid) {
                     if target.size == size {
@@ -235,13 +257,13 @@ impl OrbitModule for Wallpaper {
                     }
                     if let Some(tex) =
                         Self::load_texture(&target.file, size.width, size.height, engine)
+                        && let Some(lease) = Self::place_tex(ctl, &out, tex)
                     {
-                        let old = std::mem::replace(&mut target.tex, tex);
+                        target.tex = lease;
                         target.size = size;
-                        engine.unload_texture(old);
                     }
                 } else {
-                    self.ensure_texture_loaded(&tid, engine);
+                    self.ensure_texture_loaded(ctl, &tid, out, engine);
                 }
                 Task::RedrawTarget
             }
@@ -255,8 +277,7 @@ impl OrbitModule for Wallpaper {
             Event::Message(Msg::Cycle) => {
                 let targets_to_reload: Vec<_> = self.targets.drain().collect();
                 for (tid, target) in targets_to_reload {
-                    engine.unload_texture(target.tex);
-                    self.ensure_texture_loaded(&tid, engine);
+                    self.ensure_texture_loaded(ctl, &tid, target.out, engine);
                 }
                 Task::RedrawModule
             }
@@ -270,7 +291,7 @@ impl OrbitModule for Wallpaper {
         };
 
         let mut view = Overlay::new(el![
-            Image::new(Size::splat(Length::Grow), target.tex).fit(ContentFit::Cover)
+            Image::new(Size::splat(Length::Grow), *target.tex).fit(ContentFit::Cover)
         ])
         .size(Size::splat(Length::Grow));
 

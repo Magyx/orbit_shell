@@ -1,14 +1,18 @@
+use std::collections::HashMap;
+
 use orbit_api::{
-    Engine, Event, OrbitModule, Task, orbit_config, orbit_plugin,
+    Engine, Event, Lease, OrbitCtl, OrbitModule, Task, orbit_config, orbit_plugin,
     ui::{
         el,
         event::{KeyEvent, KeyState, LogicalKey},
         graphics::TargetId,
         model::{Color, Size},
+        render::texture::TextureHandle,
         sctk::{LockOptions, Options, OutputSet},
-        widget::{Column, Element, Length, Row, Spacer, Text},
+        widget::{Column, ContentFit, Element, Image, Length, Overlay, Row, Spacer, Text},
     },
 };
+use orbit_keys::WALLPAPER_TEX;
 use pam::Client;
 
 fn default_message() -> String {
@@ -82,12 +86,12 @@ enum AuthState {
     Failed,
 }
 
-#[derive(Debug)]
 pub struct LockScreen {
     cfg: Config,
     username: String,
     password: String,
     state: AuthState,
+    bg: HashMap<TargetId, Lease<TextureHandle>>,
 }
 
 impl Default for LockScreen {
@@ -97,6 +101,18 @@ impl Default for LockScreen {
             username: current_username(),
             password: Default::default(),
             state: Default::default(),
+            bg: HashMap::new(),
+        }
+    }
+}
+
+impl LockScreen {
+    fn ensure_bg(&mut self, ctl: &OrbitCtl<'_>) {
+        if let Some(tid) = ctl.target()
+            && !self.bg.contains_key(&tid)
+            && let Some(lease) = ctl.lease(WALLPAPER_TEX)
+        {
+            self.bg.insert(tid, lease);
         }
     }
 }
@@ -122,10 +138,12 @@ impl OrbitModule for LockScreen {
 
     fn update<'a>(
         &mut self,
+        ctl: &mut orbit_api::OrbitCtl,
         _tid: Option<TargetId>,
         _engine: &mut Engine<'a>,
         event: &Event<Self::Message>,
     ) -> Task<Msg> {
+        self.ensure_bg(ctl);
         match event {
             Event::Key(KeyEvent {
                 state: KeyState::Pressed,
@@ -211,11 +229,23 @@ impl OrbitModule for LockScreen {
         }
     }
 
-    fn view(
-        &self,
-        _tid: &TargetId,
-        _theme: &orbit_api::ui::theme::Theme,
-    ) -> Element<Self::Message> {
+    fn on_broadcast(
+        &mut self,
+        ctl: &mut OrbitCtl<'_>,
+        _tid: Option<orbit_api::ui::graphics::TargetId>,
+        key: &'static str,
+    ) -> Task<Self::Message> {
+        if key == WALLPAPER_TEX.id
+            && let Some(tid) = ctl.target()
+            && let Some(lease) = ctl.lease(WALLPAPER_TEX)
+        {
+            self.bg.insert(tid, lease);
+            return Task::RedrawTarget;
+        }
+        Task::None
+    }
+
+    fn view(&self, tid: &TargetId, _theme: &orbit_api::ui::theme::Theme) -> Element<Self::Message> {
         let lock_message = self.cfg.message.replace("{username}", &self.username);
         let dots: String = "●".repeat(self.password.len());
         let status_color = match self.state {
@@ -224,7 +254,7 @@ impl OrbitModule for LockScreen {
             AuthState::Idle => Color::WHITE,
         };
 
-        Column::new(el![
+        let column = Column::new(el![
             Spacer::new(Size::splat(Length::Grow)),
             Spacer::new(Size::splat(Length::Grow)),
             // Lock message
@@ -249,10 +279,20 @@ impl OrbitModule for LockScreen {
             .size(Size::new(Length::Grow, Length::Fit)),
             Spacer::new(Size::splat(Length::Grow)),
             Spacer::new(Size::splat(Length::Grow)),
-        ])
-        .color(Color::BLACK)
-        .size(Size::splat(Length::Grow))
-        .into()
+        ]);
+
+        match self.bg.get(tid) {
+            Some(lease) => {
+                let tex = **lease;
+                Overlay::new(el![
+                    Image::new(Size::splat(Length::Grow), tex).fit(ContentFit::Cover),
+                    column.size(Size::splat(Length::Grow))
+                ])
+                .size(Size::splat(Length::Grow))
+                .into()
+            }
+            None => column.color(Color::BLACK).into(),
+        }
     }
 }
 

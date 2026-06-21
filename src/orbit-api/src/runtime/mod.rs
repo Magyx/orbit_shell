@@ -5,7 +5,7 @@ use ui::{
     widget::Element,
 };
 
-use crate::{ErasedMsg, Event, Subscription, Task};
+use crate::{ErasedMsg, Event, OrbitCtl, Subscription, Task};
 
 pub mod erased;
 
@@ -33,9 +33,16 @@ pub trait OrbitModuleDyn: 'static {
     fn pipelines(&self) -> Vec<(&'static str, PipelineFactoryFn)>;
     fn update<'a>(
         &mut self,
+        ctl: &mut OrbitCtl<'_>,
         tid: Option<TargetId>,
         engine: &mut Engine<'a, ErasedMsg>,
         event: &Event<ErasedMsg>,
+    ) -> Task<ErasedMsg>;
+    fn on_broadcast(
+        &mut self,
+        ctl: &mut OrbitCtl<'_>,
+        tid: Option<TargetId>,
+        key: &'static str,
     ) -> Task<ErasedMsg>;
     fn view(&self, tid: &TargetId, theme: &Theme) -> Element<ErasedMsg>;
     fn command_message(&self, command: &str) -> Option<ErasedMsg>;

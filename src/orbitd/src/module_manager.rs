@@ -2,7 +2,7 @@ use std::thread::JoinHandle;
 use std::{collections::HashMap, path::Path};
 
 use calloop::{LoopHandle, RegistrationToken, channel as loop_channel};
-use orbit_api::{Engine, ErasedMsg};
+use orbit_api::{Engine, ErasedMsg, OrbitCtl, OutputInfo, OutputTag, ResourceManager};
 use orbit_common::config::Config;
 use ui::theme::Theme;
 use ui::{
@@ -28,6 +28,9 @@ pub struct ModuleManager {
     by_surface: HashMap<SurfaceId, (TargetId, ModuleId)>,
     by_target: HashMap<TargetId, (SurfaceId, ModuleId)>,
 
+    resources: ResourceManager,
+    target_output: HashMap<TargetId, OutputInfo>,
+
     pending_threads: Vec<JoinHandle<()>>,
     pending_surfaces: HashMap<SurfaceId, ModuleId>,
 }
@@ -38,7 +41,7 @@ impl ModuleManager {
         config_path: &Path,
         engine: &mut Engine<'_>,
     ) -> Result<Self, String> {
-        let modules = Self::discover_and_load_modules(config, config_path, engine, None)?;
+        let modules = discover_and_load_modules(config, config_path, engine, None)?;
         let modules_len = modules.len();
 
         Ok(Self {
@@ -48,6 +51,8 @@ impl ModuleManager {
             by_module: HashMap::with_capacity(modules_len),
             by_surface: HashMap::with_capacity(modules_len),
             by_target: HashMap::with_capacity(modules_len),
+            resources: ResourceManager::default(),
+            target_output: HashMap::new(),
             pending_threads: Vec::new(),
             pending_surfaces: HashMap::new(),
         })
@@ -88,7 +93,6 @@ impl ModuleManager {
     pub fn module(&self, id: ModuleId) -> Option<&ModuleInfo> {
         self.modules.get(&id)
     }
-
     pub fn module_mut(&mut self, id: ModuleId) -> Option<&mut ModuleInfo> {
         self.modules.get_mut(&id)
     }
@@ -103,8 +107,17 @@ impl ModuleManager {
         if let Some((tid, _)) = self.by_surface.remove(&sid) {
             engine.detach_target(&tid);
             sctk.state.remove_surface_by_surface_id(sid);
-
             self.by_target.remove(&tid);
+
+            if let Some(info) = self.target_output.remove(&tid) {
+                let tag = info.tag();
+                if !self.target_output.values().any(|i| i.tag() == tag) {
+                    self.resources.clear_output(tag);
+                    for r in self.resources.take_reclaimable() {
+                        r.reclaim(engine);
+                    }
+                }
+            }
         }
     }
 
@@ -117,59 +130,119 @@ impl ModuleManager {
     pub fn reap_threads(&mut self) {
         self.pending_threads.retain(|h| !h.is_finished());
     }
+
+    pub fn set_target_output(&mut self, tid: TargetId, info: OutputInfo) {
+        self.target_output.insert(tid, info);
+    }
+}
+
+fn discover_and_load_modules(
+    cfg: &mut Config,
+    config_path: &Path,
+    engine: &mut Engine<'_>,
+    prev_module_len: Option<usize>,
+) -> Result<HashMap<ModuleId, ModuleInfo>, String> {
+    match discover_modules(cfg, config_path, prev_module_len) {
+        Ok(modules) => load_modules(modules, cfg, engine),
+        Err(e) => Err(e),
+    }
+}
+
+fn discover_modules(
+    config: &Config,
+    config_path: &Path,
+    prev_module_len: Option<usize>,
+) -> Result<Vec<ModuleInfo>, String> {
+    let discovered = orbit_common::discovery::discover_modules(config_path, config);
+    let mut modules = Vec::with_capacity(prev_module_len.unwrap_or(discovered.len()));
+    for d in discovered {
+        modules.push(ModuleInfo::new(d.name, d.path));
+    }
+    Ok(modules)
+}
+
+fn load_modules(
+    modules: Vec<ModuleInfo>,
+    cfg: &Config,
+    engine: &mut Engine<'_>,
+) -> Result<HashMap<ModuleId, ModuleInfo>, String> {
+    let mut loaded_modules = HashMap::with_capacity(modules.len());
+    let mut next_id: u32 = 0;
+    for mut module in modules {
+        let enabled = cfg.enabled(&module.name);
+        if enabled {
+            ModuleManager::load_module(engine, cfg.get(&module.name), &mut module)?;
+            module.toggled = module.as_ref().manifest().show_on_startup;
+        } else {
+            module.toggled = false;
+            module.inner = None;
+        }
+
+        let id = ModuleId(next_id);
+        next_id = next_id.wrapping_add(1);
+        loaded_modules.insert(id, module);
+    }
+
+    Ok(loaded_modules)
+}
+
+fn output_for(
+    target_output: &HashMap<TargetId, OutputInfo>,
+    tid: Option<TargetId>,
+) -> Option<OutputInfo> {
+    tid.and_then(|t| target_output.get(&t).cloned())
+}
+
+fn emit_broadcasts(
+    tx: &RuntimeSender,
+    from: ModuleId,
+    dirty: Vec<(&'static str, Option<OutputTag>)>,
+) {
+    for (key, scope) in dirty {
+        tx.send(crate::event::Event::Ui(crate::event::Ui::Orbit(
+            crate::event::OrbitMessage::BroadCast { from, scope, key },
+        )));
+    }
+}
+
+fn do_update(
+    engine: &mut Engine,
+    event: &orbit_api::Event<ErasedMsg>,
+    (module, task, ctl): &mut (
+        &mut ModuleInfo,
+        &mut Option<UnraveledTask>,
+        &mut OrbitCtl<'_>,
+    ),
+    tid: &TargetId,
+) -> bool {
+    let (ut, redraw) = api_utils::unravel_task(
+        module.toggled,
+        module.as_mut().update(ctl, Some(*tid), engine, event),
+    );
+    **task = Some(ut);
+    redraw
+}
+
+fn do_on_broadcast(
+    _engine: &mut Engine,
+    _event: &orbit_api::Event<ErasedMsg>,
+    (module, task, ctl, key): &mut (
+        &mut ModuleInfo,
+        &mut Option<UnraveledTask>,
+        &mut OrbitCtl<'_>,
+        &'static str,
+    ),
+    tid: &TargetId,
+) -> bool {
+    let (ut, redraw) = api_utils::unravel_task(
+        module.toggled,
+        module.as_mut().on_broadcast(ctl, Some(*tid), key),
+    );
+    **task = Some(ut);
+    redraw // -> engine calls target.ctx.request_redraw() for this tid
 }
 
 impl ModuleManager {
-    fn discover_and_load_modules(
-        cfg: &mut Config,
-        config_path: &Path,
-        engine: &mut Engine<'_>,
-        prev_module_len: Option<usize>,
-    ) -> Result<HashMap<ModuleId, ModuleInfo>, String> {
-        match Self::discover_modules(cfg, config_path, prev_module_len) {
-            Ok(modules) => Self::load_modules(modules, cfg, engine),
-            Err(e) => Err(e),
-        }
-    }
-
-    fn discover_modules(
-        config: &Config,
-        config_path: &Path,
-        prev_module_len: Option<usize>,
-    ) -> Result<Vec<ModuleInfo>, String> {
-        let discovered = orbit_common::discovery::discover_modules(config_path, config);
-        let mut modules = Vec::with_capacity(prev_module_len.unwrap_or(discovered.len()));
-        for d in discovered {
-            modules.push(ModuleInfo::new(d.name, d.path));
-        }
-        Ok(modules)
-    }
-
-    fn load_modules(
-        modules: Vec<ModuleInfo>,
-        cfg: &Config,
-        engine: &mut Engine<'_>,
-    ) -> Result<HashMap<ModuleId, ModuleInfo>, String> {
-        let mut loaded_modules = HashMap::with_capacity(modules.len());
-        let mut next_id: u32 = 0;
-        for mut module in modules {
-            let enabled = cfg.enabled(&module.name);
-            if enabled {
-                Self::load_module(engine, cfg.get(&module.name), &mut module)?;
-                module.toggled = module.as_ref().manifest().show_on_startup;
-            } else {
-                module.toggled = false;
-                module.inner = None;
-            }
-
-            let id = ModuleId(next_id);
-            next_id = next_id.wrapping_add(1);
-            loaded_modules.insert(id, module);
-        }
-
-        Ok(loaded_modules)
-    }
-
     #[allow(clippy::too_many_arguments)]
     fn __realize_module(
         &mut self,
@@ -207,20 +280,6 @@ impl ModuleManager {
         }
 
         self.add_subscriptions(tx, loop_handle, mid);
-    }
-
-    fn do_update(
-        engine: &mut Engine,
-        event: &orbit_api::Event<ErasedMsg>,
-        (module, task): &mut (&mut ModuleInfo, &mut Option<UnraveledTask>),
-        tid: &TargetId,
-    ) -> bool {
-        let (ut, redraw) = api_utils::unravel_task(
-            module.toggled,
-            module.as_mut().update(Some(*tid), engine, event),
-        );
-        **task = Some(ut);
-        redraw
     }
 
     pub fn rediscover_modules(
@@ -265,7 +324,7 @@ impl ModuleManager {
         }
         self.reap_threads();
 
-        self.modules = Self::discover_and_load_modules(config, config_path, engine, None)?;
+        self.modules = discover_and_load_modules(config, config_path, engine, None)?;
         Ok(())
     }
 
@@ -445,16 +504,24 @@ impl ModuleManager {
             tid: &TargetId,
             pending_threads: &mut Vec<JoinHandle<()>>,
             task: &mut Option<UnraveledTask>,
+            resources: &mut ResourceManager,
+            output: Option<OutputInfo>,
         ) {
             *task = None;
+            let mut ctl = OrbitCtl::new(resources, Some(*tid), output);
             engine.handle_platform_event(
                 tid,
                 event,
-                &mut ModuleManager::do_update,
-                &mut (module, task),
+                &mut do_update,
+                &mut (module, task, &mut ctl),
                 tid,
             );
+            let dirty = ctl.take_dirty();
             super::dispatch::handle_task(task, mid, tx, task_tx, pending_threads);
+            for r in resources.take_reclaimable() {
+                r.reclaim(engine);
+            }
+            emit_broadcasts(tx, *mid, dirty);
         }
 
         let mut task = None;
@@ -472,10 +539,12 @@ impl ModuleManager {
                     &tid,
                     &mut self.pending_threads,
                     &mut task,
+                    &mut self.resources,
+                    output_for(&self.target_output, Some(tid)),
                 );
             } else {
                 if let Some(targets) = self.by_module.get(&mid) {
-                    for tid in targets {
+                    for &tid in targets {
                         handle_platform_event_internal(
                             engine,
                             tx,
@@ -483,17 +552,24 @@ impl ModuleManager {
                             event,
                             &mid,
                             module,
-                            tid,
+                            &tid,
                             &mut self.pending_threads,
                             &mut task,
+                            &mut self.resources,
+                            output_for(&self.target_output, Some(tid)),
                         );
                     }
                 } else {
                     if let Some(erased) = sctk::take_erased_from_message(event) {
                         let api_event = orbit_api::Event::Message(erased);
+                        let mut ctl = OrbitCtl::new(
+                            &mut self.resources,
+                            None,
+                            output_for(&self.target_output, None),
+                        );
                         let (ut, _) = api_utils::unravel_task(
                             module.toggled,
-                            module.as_mut().update(None, engine, &api_event),
+                            module.as_mut().update(&mut ctl, None, engine, &api_event),
                         );
                         task = Some(ut);
                         super::dispatch::handle_task(
@@ -509,10 +585,9 @@ impl ModuleManager {
         } else {
             for (mid, module) in self.modules.iter_mut() {
                 let Some(targets) = self.by_module.get(mid) else {
-                    // TODO: this shouldn't happen so maybe emit a warning or something?
                     continue;
                 };
-                for tid in targets {
+                for &tid in targets {
                     handle_platform_event_internal(
                         engine,
                         tx,
@@ -520,9 +595,11 @@ impl ModuleManager {
                         event,
                         mid,
                         module,
-                        tid,
+                        &tid,
                         &mut self.pending_threads,
                         &mut task,
+                        &mut self.resources,
+                        output_for(&self.target_output, Some(tid)),
                     );
                 }
             }
@@ -550,6 +627,11 @@ impl ModuleManager {
             }
 
             let mut task = None;
+            let mut ctl = OrbitCtl::new(
+                &mut self.resources,
+                Some(*tid),
+                output_for(&self.target_output, Some(*tid)),
+            );
             let need = sctk
                 .state
                 .surfaces
@@ -557,7 +639,7 @@ impl ModuleManager {
                 .map(|s| s.configured)
                 .unwrap_or(false)
                 && (poll_override
-                    || engine.poll(tid, &mut Self::do_update, &mut (module, &mut task), tid));
+                    || engine.poll(tid, &mut do_update, &mut (module, &mut task, &mut ctl), tid));
             match engine.render_if_needed(
                 tid,
                 need,
@@ -610,5 +692,66 @@ impl ModuleManager {
         for mid in modules {
             self.render_module(engine, sctk, Some(theme), tx, task_tx, &mid, poll_override);
         }
+    }
+
+    pub fn route_broadcast(
+        &mut self,
+        engine: &mut Engine,
+        tx: &RuntimeSender,
+        dispatch_tx: &loop_channel::Sender<(ModuleId, ErasedMsg)>,
+        from: ModuleId,
+        scope: Option<OutputTag>,
+        key: &'static str,
+    ) {
+        let deliveries: Vec<(ModuleId, TargetId)> = match scope {
+            None => self
+                .by_surface
+                .values()
+                .filter(|(_, mid)| *mid != from)
+                .map(|(tid, mid)| (*mid, *tid))
+                .collect(),
+            Some(tag) => self
+                .target_output
+                .iter()
+                .filter(|(_, info)| info.tag() == tag)
+                .filter_map(|(tid, _)| self.by_target.get(tid).map(|(_, mid)| (*mid, *tid)))
+                .collect(),
+        };
+        for (mid, tid) in deliveries {
+            self.handle_broadcast(engine, tx, dispatch_tx, mid, tid, key);
+        }
+    }
+
+    fn handle_broadcast(
+        &mut self,
+        engine: &mut Engine,
+        tx: &RuntimeSender,
+        dispatch_tx: &loop_channel::Sender<(ModuleId, ErasedMsg)>,
+        mid: ModuleId,
+        tid: TargetId,
+        key: &'static str,
+    ) {
+        let output = output_for(&self.target_output, Some(tid));
+        let Some(module) = self.modules.get_mut(&mid) else {
+            return;
+        };
+        let mut ctl = OrbitCtl::new(&mut self.resources, Some(tid), output);
+        let mut task = None;
+
+        let poke = ui::sctk::SctkEvent::message(());
+        engine.handle_platform_event(
+            &tid,
+            &poke,
+            &mut do_on_broadcast,
+            &mut (module, &mut task, &mut ctl, key),
+            &tid,
+        );
+
+        let dirty = ctl.take_dirty();
+        super::dispatch::handle_task(&mut task, &mid, tx, dispatch_tx, &mut self.pending_threads);
+        for r in self.resources.take_reclaimable() {
+            r.reclaim(engine);
+        }
+        emit_broadcasts(tx, mid, dirty); // re-emit if on_broadcast published
     }
 }

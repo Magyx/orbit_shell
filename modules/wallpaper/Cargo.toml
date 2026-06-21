@@ -8,6 +8,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 orbit-api = { path = "../../src/orbit-api" }
+orbit-keys = { path = "../../module-libs/keys" }
 image = { version = "0.25.8", default-features = false, features = [
   "png",
   "jpeg",

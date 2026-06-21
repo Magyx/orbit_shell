@@ -1548,6 +1548,7 @@ version = "0.1.0"
 dependencies = [
  "libc",
  "orbit-api",
+ "orbit-keys",
  "pam",
 ]
 
@@ -1854,6 +1855,13 @@ dependencies = [
 [[package]]
 name = "orbit-dbus"
 version = "0.1.0"
+
+[[package]]
+name = "orbit-keys"
+version = "0.1.0"
+dependencies = [
+ "orbit-api",
+]
 
 [[package]]
 name = "orbit-macros"
@@ -3200,6 +3208,7 @@ dependencies = [
  "humantime-serde",
  "image",
  "orbit-api",
+ "orbit-keys",
  "rand",
  "xdg-user",
 ]

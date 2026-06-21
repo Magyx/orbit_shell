@@ -10,9 +10,12 @@ use smithay_client_toolkit::{
     shell::{WaylandSurface, wlr_layer::LayerShell, xdg::XdgShell},
 };
 use ui::sctk::{Options, SctkEvent, SurfaceId, erased, handler, state::SctkState};
-use wayland_client::{Connection, EventQueue, Proxy, QueueHandle, globals::registry_queue_init};
+use wayland_client::{
+    Connection, EventQueue, Proxy, QueueHandle, globals::registry_queue_init,
+    protocol::wl_output::WlOutput,
+};
 
-use crate::event::SctkMessage;
+use crate::event::OrbitMessage;
 
 pub fn take_erased_from_message(evt: &ui::sctk::SctkEvent) -> Option<orbit_api::ErasedMsg> {
     if let ui::sctk::SctkEvent::Message(arc) = evt {
@@ -28,15 +31,15 @@ pub fn take_erased_from_message(evt: &ui::sctk::SctkEvent) -> Option<orbit_api::
 
 pub struct OrbitHandler;
 
-impl handler::SctkHandler<SctkMessage> for OrbitHandler {
+impl handler::SctkHandler<OrbitMessage> for OrbitHandler {
     fn layer_configure(
         _conn: &Connection,
         _qh: &QueueHandle<ui::sctk::state::SctkState>,
         layer: &smithay_client_toolkit::shell::wlr_layer::LayerSurface,
         _configure: smithay_client_toolkit::shell::wlr_layer::LayerSurfaceConfigure,
         _serial: u32,
-    ) -> handler::Emit<SctkMessage> {
-        handler::Emit::One(SctkMessage::SurfaceConfigured(
+    ) -> handler::Emit<OrbitMessage> {
+        handler::Emit::One(OrbitMessage::SurfaceConfigured(
             layer.wl_surface().id().protocol_id(),
         ))
     }
@@ -46,8 +49,8 @@ impl handler::SctkHandler<SctkMessage> for OrbitHandler {
         window: &smithay_client_toolkit::shell::xdg::window::Window,
         _configure: smithay_client_toolkit::shell::xdg::window::WindowConfigure,
         _serial: u32,
-    ) -> handler::Emit<SctkMessage> {
-        handler::Emit::One(SctkMessage::SurfaceConfigured(
+    ) -> handler::Emit<OrbitMessage> {
+        handler::Emit::One(OrbitMessage::SurfaceConfigured(
             window.wl_surface().id().protocol_id(),
         ))
     }
@@ -57,8 +60,8 @@ impl handler::SctkHandler<SctkMessage> for OrbitHandler {
         surface: smithay_client_toolkit::session_lock::SessionLockSurface,
         _configure: smithay_client_toolkit::session_lock::SessionLockSurfaceConfigure,
         _serial: u32,
-    ) -> handler::Emit<SctkMessage> {
-        handler::Emit::One(SctkMessage::SurfaceConfigured(
+    ) -> handler::Emit<OrbitMessage> {
+        handler::Emit::One(OrbitMessage::SurfaceConfigured(
             surface.wl_surface().id().protocol_id(),
         ))
     }
@@ -67,23 +70,23 @@ impl handler::SctkHandler<SctkMessage> for OrbitHandler {
         _conn: &Connection,
         _qh: &QueueHandle<ui::sctk::state::SctkState>,
         _output: smithay_client_toolkit::reexports::client::protocol::wl_output::WlOutput,
-    ) -> handler::Emit<SctkMessage> {
-        handler::Emit::One(SctkMessage::OutputCreated)
+    ) -> handler::Emit<OrbitMessage> {
+        handler::Emit::One(OrbitMessage::OutputCreated)
     }
     fn update_output(
         _conn: &Connection,
         _qh: &QueueHandle<ui::sctk::state::SctkState>,
         _output: smithay_client_toolkit::reexports::client::protocol::wl_output::WlOutput,
-    ) -> handler::Emit<SctkMessage> {
-        handler::Emit::One(SctkMessage::OutputCreated)
+    ) -> handler::Emit<OrbitMessage> {
+        handler::Emit::One(OrbitMessage::OutputCreated)
     }
 
     fn closed(
         _conn: &Connection,
         _qh: &QueueHandle<ui::sctk::state::SctkState>,
         layer: &smithay_client_toolkit::shell::wlr_layer::LayerSurface,
-    ) -> handler::Emit<SctkMessage> {
-        handler::Emit::One(SctkMessage::SurfaceDestroyed(
+    ) -> handler::Emit<OrbitMessage> {
+        handler::Emit::One(OrbitMessage::SurfaceDestroyed(
             layer.wl_surface().id().protocol_id(),
         ))
     }
@@ -91,8 +94,8 @@ impl handler::SctkHandler<SctkMessage> for OrbitHandler {
         _conn: &Connection,
         _qh: &QueueHandle<ui::sctk::state::SctkState>,
         window: &smithay_client_toolkit::shell::xdg::window::Window,
-    ) -> handler::Emit<SctkMessage> {
-        handler::Emit::One(SctkMessage::SurfaceDestroyed(
+    ) -> handler::Emit<OrbitMessage> {
+        handler::Emit::One(OrbitMessage::SurfaceDestroyed(
             window.wl_surface().id().protocol_id(),
         ))
     }
@@ -114,7 +117,7 @@ impl SctkApp {
             registry_queue_init(&conn).map_err(ui::error::SctkError::registry_init)?;
         let qh: QueueHandle<SctkState> = event_queue.handle();
 
-        let sctk_handler = erased::erase::<OrbitHandler, SctkMessage, _>(move |e| {
+        let sctk_handler = erased::erase::<OrbitHandler, OrbitMessage, _>(move |e| {
             let _ = main_tx.send(crate::Event::Ui(crate::event::Ui::Orbit(e)));
         });
 
@@ -202,5 +205,9 @@ impl SctkApp {
         for sid in sids {
             self.state.remove_surface_by_surface_id(*sid);
         }
+    }
+
+    pub fn get_output(&self, sid: &SurfaceId) -> Option<&WlOutput> {
+        self.state.surfaces.get(sid).and_then(|r| r.output.as_ref())
     }
 }

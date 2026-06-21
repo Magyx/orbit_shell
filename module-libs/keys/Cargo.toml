@@ -1,0 +1,7 @@
+[package]
+name = "orbit-keys"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+orbit-api = { path = "../../src/orbit-api" }
