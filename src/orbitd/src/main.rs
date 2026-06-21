@@ -141,7 +141,6 @@ impl<'a> Orbit<'a> {
         reply
     }
 
-    // TODO: output resizing is slow, not yet known of this also counts for xdg_windows.
     // TODO: subscription streams should be running while loaded not only when toggled/shown.
     fn run(&mut self) {
         let mut event_loop: EventLoop<SctkState> = EventLoop::try_new().expect("err");
