@@ -3073,7 +3073,7 @@ dependencies = [
 [[package]]
 name = "ui"
 version = "0.1.0"
-source = "git+https://github.com/Magyx/ui_lib.git?rev=b1081fc90f82218dbbdb2e1f450b7a863e7c84dc#b1081fc90f82218dbbdb2e1f450b7a863e7c84dc"
+source = "git+https://github.com/Magyx/ui_lib.git?rev=aa6fdb2a793bcbf34720ca5102244a817a75fcd8#aa6fdb2a793bcbf34720ca5102244a817a75fcd8"
 dependencies = [
  "bytemuck",
  "calloop",

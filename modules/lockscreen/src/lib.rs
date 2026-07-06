@@ -9,11 +9,16 @@ use orbit_api::{
         model::{Color, Size},
         render::texture::TextureHandle,
         sctk::{LockOptions, Options, OutputSet},
-        widget::{Column, ContentFit, Element, Image, Length, Overlay, Row, Spacer, Text},
+        widget::{Column, ContentFit, Element, Length, Overlay, Row, Spacer, Text},
     },
 };
 use orbit_keys::WALLPAPER_TEX;
 use pam::Client;
+
+mod pipeline;
+mod widgets;
+
+use widgets::*;
 
 fn default_message() -> String {
     "Welcome {username}!".into()
@@ -285,7 +290,10 @@ impl OrbitModule for LockScreen {
             Some(lease) => {
                 let tex = **lease;
                 Overlay::new(el![
-                    Image::new(Size::splat(Length::Grow), tex).fit(ContentFit::Cover),
+                    BlurImage::new(Size::splat(Length::Grow), tex)
+                        .fit(ContentFit::Cover)
+                        .tint(Color::from_hex(0x5e5e5e))
+                        .strength(5),
                     column.size(Size::splat(Length::Grow))
                 ])
                 .size(Size::splat(Length::Grow))
@@ -303,4 +311,5 @@ orbit_plugin! {
         size: Size::new(0, 0),
         output: Some(OutputSet::All),
     }),
+    pipelines: orbit_api::ui::pipeline_factories!["blur" => pipeline::BlurPipeline],
 }

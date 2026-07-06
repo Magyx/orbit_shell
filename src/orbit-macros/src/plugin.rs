@@ -109,7 +109,7 @@ impl Parse for PluginInput {
             commands,
             show_on_startup: show_on_startup.unwrap_or_else(|| syn::parse_quote!(false)),
             persistent_state: persistent_state.unwrap_or_else(|| syn::parse_quote!(false)),
-            pipelines: pipelines.unwrap_or_else(|| syn::parse_quote!(vec![])),
+            pipelines: pipelines.unwrap_or_else(|| syn::parse_quote!([])),
         })
     }
 }
@@ -401,7 +401,7 @@ pub fn orbit_plugin_impl(input: TokenStream) -> TokenStream {
                     show_on_startup: #show_on_startup,
                     persistent_state: #persistent_state,
                 },
-                pipelines: #pipelines,
+                pipelines: ::std::vec::Vec::from(#pipelines),
                 inner: ::std::sync::OnceLock::new(),
             };
             let obj: ::std::boxed::Box<dyn orbit_api::runtime::OrbitModuleDyn> =
