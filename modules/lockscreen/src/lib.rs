@@ -1,7 +1,10 @@
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    time::{Duration, Instant},
+};
 
 use orbit_api::{
-    Engine, Event, Lease, OrbitCtl, OrbitModule, Task, orbit_config, orbit_plugin,
+    Engine, Event, Lease, OrbitCtl, OrbitModule, Subscription, Task, orbit_config, orbit_plugin,
     ui::{
         el,
         event::{KeyEvent, KeyState, LogicalKey},
@@ -9,7 +12,7 @@ use orbit_api::{
         model::{Color, Size},
         render::texture::TextureHandle,
         sctk::{LockOptions, Options, OutputSet},
-        widget::{Column, ContentFit, Element, Length, Overlay, Row, Spacer, Text},
+        widget::{Column, ContentFit, Element, Length, Overlay, Rectangle, Row, Spacer, Text},
     },
 };
 use orbit_keys::WALLPAPER_TEX;
@@ -23,17 +26,23 @@ use widgets::*;
 fn default_message() -> String {
     "Welcome {username}!".into()
 }
+fn default_idle_duration() -> String {
+    "5m".into()
+}
 
 #[orbit_config]
 pub struct Config {
     #[serde(default = "default_message")]
     pub message: String,
+    #[serde(default = "default_idle_duration")]
+    pub idle: String,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
             message: default_message(),
+            idle: default_idle_duration(),
         }
     }
 }
@@ -81,6 +90,7 @@ fn authenticate(username: &str, password: String) -> bool {
 #[derive(Clone, Debug)]
 pub enum Msg {
     AuthResult(bool),
+    CheckAfk,
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -96,7 +106,12 @@ pub struct LockScreen {
     username: String,
     password: String,
     state: AuthState,
+
     bg: HashMap<TargetId, Lease<TextureHandle>>,
+
+    last_event: Instant,
+    idle_time: Option<Duration>,
+    idle: bool,
 }
 
 impl Default for LockScreen {
@@ -107,6 +122,9 @@ impl Default for LockScreen {
             password: Default::default(),
             state: Default::default(),
             bg: HashMap::new(),
+            last_event: Instant::now(),
+            idle_time: None,
+            idle: false,
         }
     }
 }
@@ -138,6 +156,7 @@ impl OrbitModule for LockScreen {
         _options: &mut Options,
     ) -> bool {
         self.cfg = config;
+        self.idle_time = duration_str::parse(&self.cfg.idle).ok();
         false
     }
 
@@ -149,7 +168,8 @@ impl OrbitModule for LockScreen {
         event: &Event<Self::Message>,
     ) -> Task<Msg> {
         self.ensure_bg(ctl);
-        match event {
+
+        let mut task = match event {
             Event::Key(KeyEvent {
                 state: KeyState::Pressed,
                 logical_key: key,
@@ -164,6 +184,7 @@ impl OrbitModule for LockScreen {
                 let task = match key {
                     LogicalKey::Enter => {
                         is_enter = true;
+
                         Task::None
                     }
 
@@ -218,20 +239,49 @@ impl OrbitModule for LockScreen {
                 }
             }
 
-            Event::Message(Msg::AuthResult(true)) => {
-                self.password.clear();
-                self.state = AuthState::Idle;
-                Task::ExitModule
-            }
+            Event::Message(msg) => match msg {
+                Msg::AuthResult(true) => {
+                    self.password.clear();
+                    self.state = AuthState::Idle;
+                    Task::ExitModule
+                }
+                Msg::AuthResult(false) => {
+                    self.password.clear();
+                    self.state = AuthState::Failed;
+                    Task::RedrawTarget
+                }
 
-            Event::Message(Msg::AuthResult(false)) => {
-                self.password.clear();
-                self.state = AuthState::Failed;
-                Task::RedrawTarget
-            }
+                Msg::CheckAfk => {
+                    if let Some(idle_time) = self.idle_time
+                        && self.last_event.elapsed() >= idle_time
+                    {
+                        if !self.idle {
+                            self.idle = true;
+                            Task::RedrawModule
+                        } else {
+                            Task::None
+                        }
+                    } else {
+                        Task::None
+                    }
+                }
+            },
 
             _ => Task::None,
+        };
+
+        if !matches!(
+            event,
+            Event::Message(_) | Event::Platform(_) | Event::RedrawRequested
+        ) {
+            if self.idle {
+                task = Task::batch([task, Task::RedrawModule])
+            }
+            self.idle = false;
+            self.last_event = Instant::now();
         }
+
+        task
     }
 
     fn on_broadcast(
@@ -251,6 +301,10 @@ impl OrbitModule for LockScreen {
     }
 
     fn view(&self, tid: &TargetId, _theme: &orbit_api::ui::theme::Theme) -> Element<Self::Message> {
+        if self.idle {
+            return Rectangle::new(Size::splat(Length::Grow), Color::BLACK).into();
+        }
+
         let lock_message = self.cfg.message.replace("{username}", &self.username);
         let dots: String = "●".repeat(self.password.len());
         let status_color = match self.state {
@@ -300,6 +354,13 @@ impl OrbitModule for LockScreen {
                 .into()
             }
             None => column.color(Color::BLACK).into(),
+        }
+    }
+
+    fn subscriptions(&self) -> Subscription<Self::Message> {
+        Subscription::SyncedInterval {
+            every: Duration::from_secs(1),
+            message: Msg::CheckAfk,
         }
     }
 }
