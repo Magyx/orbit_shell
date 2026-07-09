@@ -358,9 +358,13 @@ impl OrbitModule for LockScreen {
     }
 
     fn subscriptions(&self) -> Subscription<Self::Message> {
-        Subscription::SyncedInterval {
-            every: Duration::from_secs(1),
-            message: Msg::CheckAfk,
+        if self.idle_time.is_some() {
+            Subscription::SyncedInterval {
+                every: Duration::from_secs(1),
+                message: Msg::CheckAfk,
+            }
+        } else {
+            Subscription::None
         }
     }
 }
