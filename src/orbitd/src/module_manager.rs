@@ -632,14 +632,16 @@ impl ModuleManager {
                 Some(*tid),
                 output_for(&self.target_output, Some(*tid)),
             );
-            let need = sctk
+
+            let configured = sctk
                 .state
                 .surfaces
                 .get(sid)
                 .map(|s| s.configured)
-                .unwrap_or(false)
-                && (poll_override
-                    || engine.poll(tid, &mut do_update, &mut (module, &mut task, &mut ctl), tid));
+                .unwrap_or(false);
+            let poll_needs =
+                engine.poll(tid, &mut do_update, &mut (module, &mut task, &mut ctl), tid);
+            let need = configured && (poll_override || poll_needs);
             match engine.render_if_needed(
                 tid,
                 need,
