@@ -103,11 +103,14 @@ impl WidgetConfig {
 
     pub fn clock_durations(&self, out: &mut Vec<Duration>) {
         match self {
-            Self::Clock { time_format, .. } => out.push(match time_format {
-                f if f.contains("%f") => Duration::from_millis(100),
-                f if f.contains("%S") => Duration::from_secs(1),
-                f if f.contains("%M") => Duration::from_secs(60),
-                _ => Duration::from_secs(3600),
+            Self::Clock { time_format: f, .. } => out.push(if f.contains("%f") {
+                Duration::from_millis(100)
+            } else if f.contains("%S") {
+                Duration::from_secs(1)
+            } else if f.contains("%M") {
+                Duration::from_secs(60)
+            } else {
+                Duration::from_secs(3600)
             }),
             Self::Column { children, .. } | Self::Row { children, .. } => {
                 for c in children {
