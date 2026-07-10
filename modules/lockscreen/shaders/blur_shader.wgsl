@@ -18,7 +18,7 @@ struct VertexOutput {
     @location(2) @interpolate(flat) slot_plus_one: u32,
     @location(3) @interpolate(flat) gen: u32,
     @location(5) rect_size_px: vec2<f32>,
-    @location(6) @interpolate(flat) blur_strength: u32,
+    @location(6) blur_strength: f32,
 }
 
 struct Globals {
@@ -51,14 +51,19 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     let scale = unpack2x16unorm(in.tex.y);
     let offs = unpack2x16unorm(in.tex.z);
 
+    let strength = bitcast<f32>(in.style.y);
+    let zoom_amount = 1.0 - (strength * 0.006);
+    let centered_uv = uv - vec2<f32>(0.5);
+    let zoomed_uv = (centered_uv * zoom_amount) + vec2<f32>(0.5);
+
     var out: VertexOutput;
     out.position = vec4<f32>(ndc, 0.0, 1.0);
     out.slot_plus_one = packed & SLOT_MASK;
     out.gen = packed >> SLOT_BITS;
     out.color = unpack4x8unorm(in.style.x);
-    out.uv_tex = (uv * scale) + offs;
+    out.uv_tex = (zoomed_uv * scale) + offs;
     out.rect_size_px = in.size * globals.scale;
-    out.blur_strength = in.style.y;
+    out.blur_strength = strength;
 
     return out;
 }
@@ -72,7 +77,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         return vec4<f32>(0.0);
     }
 
-    let strength = f32(in.blur_strength);
+    let strength = in.blur_strength;
     let base_color = textureSample(tex_arr[idx], samp, in.uv_tex);
 
     // Fallback to unblurred if strength is effectively 0
@@ -80,28 +85,28 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         return base_color * in.color;
     }
 
-    // Step size in UV space per physical pixel
     let texel_size = 1.0 / in.rect_size_px;
-
     var color_accumulator = vec4<f32>(0.0);
-    var total_weight = 0.0;
 
-    // 5x5 Kernel Blur Loop
-    for (var x: f32 = -2.0; x <= 2.0; x += 1.0) {
-        for (var y: f32 = -2.0; y <= 2.0; y += 1.0) {
-            // Scale offset by user-defined strength
-            let offset = vec2<f32>(x, y) * (strength / 2.0) * texel_size;
+    // We can get a blur with fewer samples using a spiral.
+    // 24.0 samples is typically plenty for UI elements.
+    let SAMPLES: f32 = 24.0;
+    let GOLDEN_ANGLE: f32 = 2.3999632; // $\pi \times (3 - \sqrt{5})$
 
-            // Simple Gaussian weight approximation based on distance squared: $1 / (1 + d^2)$
-            let weight = 1.0 / (1.0 + dot(vec2<f32>(x, y), vec2<f32>(x, y)));
+    for (var i: f32 = 0.0; i < SAMPLES; i += 1.0) {
+        // Radius increases quadratically for even area distribution
+        let r = sqrt(i / SAMPLES) * strength;
+        let theta = i * GOLDEN_ANGLE;
 
-            let sample_uv = in.uv_tex + offset;
-            color_accumulator += textureSample(tex_arr[idx], samp, sample_uv) * weight;
-            total_weight += weight;
-        }
+        // Convert polar coordinates (radius, angle) to cartesian (x, y) offset
+        let offset = vec2<f32>(cos(theta), sin(theta)) * (r * texel_size);
+        let sample_uv = in.uv_tex + offset;
+
+        color_accumulator += textureSample(tex_arr[idx], samp, sample_uv);
     }
 
-    let blurred = color_accumulator / total_weight;
+    // All samples in a Vogel spiral are evenly distributed
+    let blurred = color_accumulator / SAMPLES;
     let final_color = blurred * in.color;
 
     // Return with alpha premultiplied matching your UI blend state

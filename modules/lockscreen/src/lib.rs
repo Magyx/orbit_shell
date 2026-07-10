@@ -4,7 +4,7 @@ use std::{
 };
 
 use orbit_api::{
-    Engine, Event, Lease, OrbitCtl, OrbitModule, Subscription, Task, orbit_config, orbit_plugin,
+    Engine, Event, Lease, OrbitCtl, OrbitModule, Subscription, Task, orbit_plugin,
     ui::{
         el,
         event::{KeyEvent, KeyState, LogicalKey},
@@ -18,34 +18,12 @@ use orbit_api::{
 use orbit_keys::WALLPAPER_TEX;
 use pam::Client;
 
+mod config;
 mod pipeline;
 mod widgets;
 
+use config::*;
 use widgets::*;
-
-fn default_message() -> String {
-    "Welcome {username}!".into()
-}
-fn default_idle_duration() -> String {
-    "5m".into()
-}
-
-#[orbit_config]
-pub struct Config {
-    #[serde(default = "default_message")]
-    pub message: String,
-    #[serde(default = "default_idle_duration")]
-    pub idle: String,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            message: default_message(),
-            idle: default_idle_duration(),
-        }
-    }
-}
 
 fn current_username() -> String {
     if let Ok(u) = std::env::var("USER")
@@ -90,7 +68,7 @@ fn authenticate(username: &str, password: String) -> bool {
 #[derive(Clone, Debug)]
 pub enum Msg {
     AuthResult(bool),
-    CheckAfk,
+    CheckIdle,
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -112,6 +90,8 @@ pub struct LockScreen {
     last_event: Instant,
     idle_time: Option<Duration>,
     idle: bool,
+
+    blur_strength: f32,
 }
 
 impl Default for LockScreen {
@@ -125,6 +105,7 @@ impl Default for LockScreen {
             last_event: Instant::now(),
             idle_time: None,
             idle: false,
+            blur_strength: 0.0,
         }
     }
 }
@@ -147,6 +128,7 @@ impl OrbitModule for LockScreen {
     fn cleanup<'a>(&mut self, _engine: &mut Engine<'a>) {
         self.password.clear();
         self.state = AuthState::Idle;
+        self.blur_strength = 0.0;
     }
 
     fn apply_config<'a>(
@@ -163,8 +145,8 @@ impl OrbitModule for LockScreen {
     fn update<'a>(
         &mut self,
         ctl: &mut orbit_api::OrbitCtl,
-        _tid: Option<TargetId>,
-        _engine: &mut Engine<'a>,
+        tid: Option<TargetId>,
+        engine: &mut Engine<'a>,
         event: &Event<Self::Message>,
     ) -> Task<Msg> {
         self.ensure_bg(ctl);
@@ -239,6 +221,30 @@ impl OrbitModule for LockScreen {
                 }
             }
 
+            Event::RedrawRequested => {
+                if let Some(tid) = tid
+                    && let Some(g) = engine.globals(&tid)
+                {
+                    let max_blur = self.cfg.blur as f32;
+                    let mut request_next_frame = false;
+                    if g.frame < 8 {
+                        request_next_frame = true;
+                    } else if self.blur_strength < max_blur {
+                        self.blur_strength =
+                            (self.blur_strength + 16.0 * g.delta_time).min(max_blur);
+                        request_next_frame = true;
+                    }
+
+                    if request_next_frame {
+                        Task::RedrawModule
+                    } else {
+                        Task::None
+                    }
+                } else {
+                    Task::None
+                }
+            }
+
             Event::Message(msg) => match msg {
                 Msg::AuthResult(true) => {
                     self.password.clear();
@@ -251,16 +257,13 @@ impl OrbitModule for LockScreen {
                     Task::RedrawTarget
                 }
 
-                Msg::CheckAfk => {
+                Msg::CheckIdle => {
                     if let Some(idle_time) = self.idle_time
                         && self.last_event.elapsed() >= idle_time
+                        && !self.idle
                     {
-                        if !self.idle {
-                            self.idle = true;
-                            Task::RedrawModule
-                        } else {
-                            Task::None
-                        }
+                        self.idle = true;
+                        Task::RedrawModule
                     } else {
                         Task::None
                     }
@@ -346,8 +349,14 @@ impl OrbitModule for LockScreen {
                 Overlay::new(el![
                     BlurImage::new(Size::splat(Length::Grow), tex)
                         .fit(ContentFit::Cover)
-                        .tint(Color::from_hex(0x5e5e5e))
-                        .strength(5),
+                        .tint({
+                            let max_blur = self.cfg.blur as f32;
+                            let scaled_gray = (255.0
+                                - (255.0 - self.cfg.bg_tint as f32) * self.blur_strength / max_blur)
+                                as u8;
+                            Color::rgb(scaled_gray, scaled_gray, scaled_gray)
+                        })
+                        .strength(self.blur_strength),
                     column.size(Size::splat(Length::Grow))
                 ])
                 .size(Size::splat(Length::Grow))
@@ -361,7 +370,7 @@ impl OrbitModule for LockScreen {
         if self.idle_time.is_some() {
             Subscription::SyncedInterval {
                 every: Duration::from_secs(1),
-                message: Msg::CheckAfk,
+                message: Msg::CheckIdle,
             }
         } else {
             Subscription::None

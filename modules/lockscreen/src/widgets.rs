@@ -18,7 +18,7 @@ pub struct BlurImage {
     handle: TextureHandle,
     fit: ContentFit,
     tint: Color,
-    blur_strength: u32,
+    blur_strength: f32,
 }
 
 #[allow(dead_code)]
@@ -35,14 +35,14 @@ impl BlurImage {
             handle,
             fit: ContentFit::Fill,
             tint: Color::WHITE,
-            blur_strength: 0,
+            blur_strength: 0.0,
         }
     }
     pub fn tint(mut self, tint: Color) -> Self {
         self.tint = tint;
         self
     }
-    pub fn strength(mut self, strength: u32) -> Self {
+    pub fn strength(mut self, strength: f32) -> Self {
         self.blur_strength = strength;
         self
     }
@@ -122,7 +122,7 @@ impl<M> Widget<M> for BlurImage {
             // data1 maps to `@location(2) style` in ui_shader.wgsl / blur_shader.wgsl
             // index 0: Tint Color
             // index 1: Blur Strength (read as in.style.y / blur_strength in shader)
-            [self.tint.0, self.blur_strength, 0, 0],
+            [self.tint.0, self.blur_strength.to_bits(), 0, 0],
             // data2 maps to `@location(3) tex`
             // Matches the standard ui_tex layout exactly so texture mapping works
             [
