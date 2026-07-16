@@ -5,11 +5,12 @@ use orbit_api::{
     orbit_config,
     ui::{
         model::{Family, Size},
+        text::Wrap,
         widget::{Column, Element, Length, Overlay, Row, Text},
     },
 };
 
-use crate::{Msg, PerTarget};
+use crate::PerTarget;
 
 fn default_source() -> PathBuf {
     xdg_user::pictures()
@@ -52,7 +53,7 @@ pub struct Placed {
 }
 
 impl Placed {
-    pub fn place(&self, target: &PerTarget, now: &DateTime<Local>, on: &mut Overlay<Msg>) {
+    pub fn place(&self, target: &PerTarget, now: &DateTime<Local>, on: &mut Overlay) {
         on.push(
             self.widget.element(now),
             (target.size.width as f32 * self.x.clamp(0.0, 1.0)).ceil() as i32,
@@ -120,7 +121,7 @@ impl WidgetConfig {
         }
     }
 
-    fn element(&self, now: &DateTime<Local>) -> Element<Msg> {
+    fn element(&self, now: &DateTime<Local>) -> Element {
         match self {
             WidgetConfig::Clock {
                 font_size,
@@ -129,7 +130,7 @@ impl WidgetConfig {
             } => {
                 let time = now.format(time_format).to_string();
                 let mut text = Text::new(time)
-                    .wrap(orbit_api::ui::model::Wrap::None)
+                    .wrap(Wrap::None)
                     .font_size(*font_size)
                     .family(Family::Monospace)
                     .size(Size::splat(Length::Fit));

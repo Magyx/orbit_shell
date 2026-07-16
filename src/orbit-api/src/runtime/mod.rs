@@ -20,13 +20,13 @@ pub struct Manifest {
 
 pub trait OrbitModuleDyn: 'static {
     fn manifest(&self) -> &Manifest;
-    fn cleanup<'a>(&mut self, engine: &mut Engine<'a, ErasedMsg>);
+    fn cleanup<'a>(&mut self, engine: &mut Engine<'a>);
 
     fn validate_config_raw(&self, cfg: &yaml_serde::Value) -> Result<(), String>;
     fn validate_config(&self, cfg: &yaml_serde::Value) -> Result<(), String>;
     fn apply_config<'a>(
         &mut self,
-        engine: &mut Engine<'a, ErasedMsg>,
+        engine: &mut Engine<'a>,
         config: &yaml_serde::Value,
         options: &mut ui::sctk::Options,
     ) -> bool;
@@ -35,7 +35,7 @@ pub trait OrbitModuleDyn: 'static {
         &mut self,
         ctl: &mut OrbitCtl<'_>,
         tid: Option<TargetId>,
-        engine: &mut Engine<'a, ErasedMsg>,
+        engine: &mut Engine<'a>,
         event: &Event<ErasedMsg>,
     ) -> Task<ErasedMsg>;
     fn on_broadcast(
@@ -44,7 +44,7 @@ pub trait OrbitModuleDyn: 'static {
         tid: Option<TargetId>,
         key: &'static str,
     ) -> Task<ErasedMsg>;
-    fn view(&self, tid: &TargetId, theme: &Theme) -> Element<ErasedMsg>;
+    fn view(&self, tid: &TargetId, theme: &Theme) -> Element;
     fn command_message(&self, command: &str) -> Option<ErasedMsg>;
 
     fn subscriptions(&self) -> Subscription<ErasedMsg>;

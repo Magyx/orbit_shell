@@ -274,7 +274,7 @@ pub fn orbit_plugin_impl(input: TokenStream) -> TokenStream {
                 &self.manifest
             }
 
-            fn cleanup<'a>(&mut self, engine: &mut orbit_api::ui::graphics::Engine<'a, orbit_api::ErasedMsg>) {
+            fn cleanup<'a>(&mut self, engine: &mut orbit_api::ui::graphics::Engine<'a>) {
                 <#module_ty as orbit_api::OrbitModule>::cleanup(self.inner_mut(), engine);
             }
 
@@ -298,7 +298,7 @@ pub fn orbit_plugin_impl(input: TokenStream) -> TokenStream {
 
             fn apply_config<'a>(
                 &mut self,
-                engine: &mut orbit_api::ui::graphics::Engine<'a, orbit_api::ErasedMsg>,
+                engine: &mut orbit_api::ui::graphics::Engine<'a>,
                 config: &orbit_api::yaml_serde::Value,
                 options: &mut orbit_api::ui::sctk::Options,
             ) -> bool {
@@ -332,7 +332,7 @@ pub fn orbit_plugin_impl(input: TokenStream) -> TokenStream {
                 &mut self,
                 ctl: &mut orbit_api::OrbitCtl<'_>,
                 tid: Option<orbit_api::ui::graphics::TargetId>,
-                engine: &mut orbit_api::ui::graphics::Engine<'a, orbit_api::ErasedMsg>,
+                engine: &mut orbit_api::ui::graphics::Engine<'a>,
                 event: &orbit_api::Event<orbit_api::ErasedMsg>,
             ) -> orbit_api::Task<orbit_api::ErasedMsg> {
                 match Self::map_event::<<#module_ty as orbit_api::OrbitModule>::Message>(event) {
@@ -364,9 +364,8 @@ pub fn orbit_plugin_impl(input: TokenStream) -> TokenStream {
                 &self,
                 tid: &orbit_api::ui::graphics::TargetId,
                 theme: &orbit_api::ui::theme::Theme,
-            ) -> orbit_api::ui::widget::Element<orbit_api::ErasedMsg> {
-                let typed = <#module_ty as orbit_api::OrbitModule>::view(self.inner_ref(), tid, theme);
-                orbit_api::runtime::erased::erase_element(typed)
+            ) -> orbit_api::ui::widget::Element {
+                <#module_ty as orbit_api::OrbitModule>::view(self.inner_ref(), tid, theme)
             }
 
             fn command_message(

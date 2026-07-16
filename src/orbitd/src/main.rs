@@ -72,7 +72,9 @@ impl<'a> Orbit<'a> {
         let (sctk_rx, sctk) =
             SctkApp::new(tx.clone()).map_err(|e| format!("failed to connect to Wayland: {e:?}"))?;
 
-        let mut engine = Engine::default();
+        let mut engine = Engine::builder::<ErasedMsg>()
+            .build()
+            .map_err(|e| e.to_string())?;
         let module_manager = ModuleManager::new(&mut config, &config_path, &mut engine)?;
 
         Ok(Self {

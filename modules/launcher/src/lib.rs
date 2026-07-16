@@ -6,12 +6,13 @@ use orbit_api::{
         el,
         event::{KeyEvent, LogicalKey},
         graphics::TargetId,
-        model::{Color, Size, Vec4, Wrap},
+        model::{Color, Size, Vec4},
         render::{
             AllocatorKind,
             texture::{Atlas, TextureHandle},
         },
         sctk::{Anchor, KeyboardInteractivity, Layer, LayerOptions, Options, OutputSet},
+        text::Wrap,
         widget::{Column, Element, Image, Length, Rectangle, Row, Scrollable, Spacer, Text},
     },
 };
@@ -370,11 +371,7 @@ impl OrbitModule for Launcher {
         }
     }
 
-    fn view(
-        &self,
-        _tid: &TargetId,
-        _theme: &orbit_api::ui::theme::Theme,
-    ) -> Element<Self::Message> {
+    fn view(&self, _tid: &TargetId, _theme: &orbit_api::ui::theme::Theme) -> Element {
         let icon_sz = self.cfg.icon_size as i32;
 
         let prompt = if self.query.is_empty() {
@@ -404,7 +401,7 @@ impl OrbitModule for Launcher {
                 Color::rgba(0, 0, 0, 0)
             };
 
-            let icon_el: Element<Msg> = if let Some(handle) = entry.icon {
+            let icon_el: Element = if let Some(handle) = entry.icon {
                 Image::new(Size::splat(Length::Fixed(icon_sz)), handle).into()
             } else {
                 Rectangle::new(
@@ -453,7 +450,7 @@ impl OrbitModule for Launcher {
             }
         }
 
-        let body: Element<Msg> = if !self.results.is_empty() {
+        let body: Element = if !self.results.is_empty() {
             Scrollable::new(results_col)
                 .size(Size::new(Length::Grow, Length::Grow))
                 .into()

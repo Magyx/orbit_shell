@@ -9,9 +9,10 @@ use orbit_api::{
         el,
         event::{KeyEvent, KeyState, LogicalKey},
         graphics::TargetId,
-        model::{Color, Size},
+        model::{Color, Family, Size},
         render::texture::TextureHandle,
         sctk::{LockOptions, Options, OutputSet},
+        text::Wrap,
         widget::{Column, ContentFit, Element, Length, Overlay, Rectangle, Row, Spacer, Text},
     },
 };
@@ -303,7 +304,7 @@ impl OrbitModule for LockScreen {
         Task::None
     }
 
-    fn view(&self, tid: &TargetId, _theme: &orbit_api::ui::theme::Theme) -> Element<Self::Message> {
+    fn view(&self, tid: &TargetId, _theme: &orbit_api::ui::theme::Theme) -> Element {
         if self.idle {
             return Rectangle::new(Size::splat(Length::Grow), Color::BLACK).into();
         }
@@ -324,7 +325,7 @@ impl OrbitModule for LockScreen {
                 Spacer::new(Size::splat(Length::Grow)),
                 Text::h2(lock_message)
                     .size(Size::splat(Length::Fit))
-                    .wrap(orbit_api::ui::model::Wrap::None),
+                    .wrap(Wrap::None),
                 Spacer::new(Size::splat(Length::Grow)),
             ])
             .size(Size::new(Length::Grow, Length::Fit)),
@@ -335,7 +336,7 @@ impl OrbitModule for LockScreen {
                 Text::h3(dots)
                     .size(Size::splat(Length::Fit))
                     .color(status_color)
-                    .family(orbit_api::ui::model::Family::Name("Noto Sans Mono".into())),
+                    .family(Family::Name("Noto Sans Mono".into())),
                 Spacer::new(Size::splat(Length::Grow)),
             ])
             .size(Size::new(Length::Grow, Length::Fit)),

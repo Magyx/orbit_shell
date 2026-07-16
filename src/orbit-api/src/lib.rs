@@ -22,7 +22,7 @@ pub use yaml_serde;
 mod resource;
 
 pub type Event<M> = ui::event::Event<M, SctkEvent>;
-pub type Engine<'a> = ui::graphics::Engine<'a, ErasedMsg>;
+pub type Engine<'a> = ui::graphics::Engine<'a>;
 
 pub struct ErasedMsg {
     pub(crate) inner: Box<dyn crate::runtime::erased::DynMsg>,
@@ -186,11 +186,7 @@ pub trait OrbitModule: Default + 'static {
         let _ = (ctl, tid, key);
         Task::None
     }
-    fn view(
-        &self,
-        tid: &ui::graphics::TargetId,
-        theme: &ui::theme::Theme,
-    ) -> Element<Self::Message>;
+    fn view(&self, tid: &ui::graphics::TargetId, theme: &ui::theme::Theme) -> Element;
 
     fn subscriptions(&self) -> Subscription<Self::Message> {
         Subscription::None

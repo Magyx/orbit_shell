@@ -104,11 +104,7 @@ impl OrbitModule for Bar {
         }
     }
 
-    fn view(
-        &self,
-        _tid: &TargetId,
-        _theme: &orbit_api::ui::theme::Theme,
-    ) -> Element<Self::Message> {
+    fn view(&self, _tid: &TargetId, _theme: &orbit_api::ui::theme::Theme) -> Element {
         Row::new(el![
             Spacer::new(Size::splat(Length::Grow)),
             Column::new(el![

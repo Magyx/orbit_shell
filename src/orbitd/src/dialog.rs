@@ -12,7 +12,7 @@ use ui::{
 
 use crate::sctk::SctkApp;
 
-pub fn error_view(_: &TargetId, errors: &Vec<String>) -> Element<ErasedMsg> {
+pub fn error_view(_: &TargetId, errors: &Vec<String>) -> Element {
     let mut col = Column::empty()
         .padding(Vec4::splat(10))
         .size(Size::splat(Length::Grow))
@@ -111,7 +111,13 @@ impl ErrorDialog {
                 .iter()
                 .filter(|(_, s)| Some(*s) == event.surface_id())
             {
-                engine.handle_platform_event(tid, event, &mut |_, _, _, _| false, &mut (), &());
+                engine.handle_platform_event::<_, _, ErasedMsg, _>(
+                    tid,
+                    event,
+                    &mut |_, _, _, _| false,
+                    &mut (),
+                    &(),
+                );
             }
         }
     }
